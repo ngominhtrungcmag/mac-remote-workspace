@@ -77,10 +77,10 @@ final class NativeSFTPTests: XCTestCase {
     sftp> ls -la
     drwxrwxrwt   30 root     wheel         960 Oct 30 19:40 .
     drwxr-xr-x    6 root     wheel         192 Oct 28 14:40 ..
-    -rw-r--r--    1 trungnm  staff        1024 Oct 30 19:45 test file.txt
-    drwxr-xr-x    2 trungnm  staff          64 Oct 30 19:46 folder1
-    lrwxr-xr-x    1 trungnm  staff          12 Oct 30 19:47 symlink_entry -> /var/folders
-    -rwxr-xr-x@   1 trungnm  staff       12345 Oct 30  2024 script.sh
+    -rw-r--r--    1 user  staff        1024 Oct 30 19:45 test file.txt
+    drwxr-xr-x    2 user  staff          64 Oct 30 19:46 folder1
+    lrwxr-xr-x    1 user  staff          12 Oct 30 19:47 symlink_entry -> /var/folders
+    -rwxr-xr-x@   1 user  staff       12345 Oct 30  2024 script.sh
     """
 
     let entries = NativeSFTPClient.parseListingOutput(rawOutput, inDirectory: "/tmp")

@@ -1,6 +1,6 @@
 # ADR-SP-02: macOS Keychain probe and release target
 
-> **Historical Rust feasibility probe.** This records a standalone Keychain harness, not a Native Swift app credential implementation or acceptance result. Use ADR-010 and TASK-01 for current app work.
+> **Historical Rust feasibility probe.** This records a standalone Keychain harness, not a Native Swift app credential implementation or acceptance result. Use ADR-010 for current app work.
 
 **Status:** Proposed  
 **Date:** 2026-10-27  

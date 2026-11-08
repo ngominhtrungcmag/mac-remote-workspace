@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 (unreleased)
+## 1.0.0 — 2026-11-08
 
 - Native macOS host inventory, SSH terminal tabs, strict host trust and Keychain credentials.
 - SFTP browsing and transfers, ProxyJump, local tunnels and snippets.

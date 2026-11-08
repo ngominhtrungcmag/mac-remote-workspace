@@ -33,7 +33,7 @@ swift test
 ./build-native.sh
 ```
 
-The repository's active app is a Swift Package at the repository root. Open `MacRemoteWorkspace.xcodeproj` and run the shared `MacRemoteWorkspace` scheme after building FreeRDP. The scheme has no Test action; run `swift test` separately. Debug builds contain SwiftPM debug information, but Xcode indexing and source breakpoints have not been verified; select a signing team locally if needed. The React/Tauri/Rust build scripts under the old prototype are not release commands. `./run-ssh-fixture.sh` starts only disposable loopback OpenSSH services; never point development tests at production hosts.
+The repository's active app is a Swift Package at the repository root. Open `MacRemoteWorkspace.xcodeproj` and run the shared `MacRemoteWorkspace-App` scheme after building FreeRDP. The scheme has no Test action; run `swift test` separately. Debug builds contain SwiftPM debug information, but Xcode indexing and source breakpoints have not been verified; select a signing team locally if needed. The React/Tauri/Rust build scripts under the old prototype are not release commands. `./run-ssh-fixture.sh` starts only disposable loopback OpenSSH services; never point development tests at production hosts.
 
 ## 3. Signing and notarization
 
@@ -75,11 +75,11 @@ Release step (SEC-T08): run `./scripts/sbom-macos.sh` (offline) to regenerate `d
 | SFTP permission denied | OS permission / remote ACL | Check ownership and selected remote path |
 | External RDP not found | Client missing / URL integration changed | Select supported client/copy endpoint |
 | App blocked by Gatekeeper | Missing/invalid signing/notarization | Download official signed release, do not disable Gatekeeper |
-| Transfer incomplete | Network/disk/permission | Inspect job error and destination .part state before retry |
+| Transfer incomplete | Network/disk/permission | Inspect job error and destination `.mrw-part-*` staging file before retry |
 
 ## 8. Release checklist
 
-Gate checklist sống ở `checklists/release-gates.md`. Stable release requires CHANGELOG, known limitations, license inventory, privacy disclosure, binary checksums, documented supported macOS versions, security contact and reproducible build steps where possible.
+Stable release requires CHANGELOG, known limitations, license inventory, privacy disclosure, binary checksums, documented supported macOS versions, security contact and reproducible build steps where possible.
 
 
 

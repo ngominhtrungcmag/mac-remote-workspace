@@ -53,7 +53,7 @@ erDiagram
 
 ## 5. SQL baseline
 
-File `specs/schema.sql` bao gồm các `CREATE TABLE`, FK, CHECK, UNIQUE, INDEX; được dùng làm baseline, không coi là migration production. Database có `PRAGMA foreign_keys=ON` trên mỗi connection; dùng WAL và `busy_timeout` theo QA. Schema version qua `PRAGMA user_version`, future migrations có transactional backups.
+Logical schema gồm các `CREATE TABLE`, FK, CHECK, UNIQUE, INDEX; được dùng làm baseline, không coi là migration production. Database có `PRAGMA foreign_keys=ON` trên mỗi connection; dùng WAL và `busy_timeout` theo QA. Schema version qua `PRAGMA user_version`, future migrations có transactional backups.
 
 ## 6. Retention & cleanup
 
@@ -88,6 +88,6 @@ File `specs/schema.sql` bao gồm các `CREATE TABLE`, FK, CHECK, UNIQUE, INDEX;
 }
 ```
 
-Đây là ví dụ minh họa. Import/export schema cuối cùng cần đối chiếu với các Swift `Codable` contracts và migration rules, validate dữ liệu ngoài và transaction trước khi áp dụng. `specs/ipc.types.ts` chỉ thuộc prototype Tauri cũ.
+Đây là ví dụ minh họa. Import/export schema cuối cùng cần đối chiếu với các Swift `Codable` contracts và migration rules, validate dữ liệu ngoài và transaction trước khi áp dụng.
 
 

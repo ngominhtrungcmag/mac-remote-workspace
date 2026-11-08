@@ -1,6 +1,6 @@
 # D08 — Native AppCore Service Contracts
 
-ADR-010 replaces the original Tauri IPC design with typed in-process Swift services. `specs/ipc.types.ts` and dotted command names are retained for prototype history only; do not extend them for product work.
+ADR-010 replaces the original Tauri IPC design with typed in-process Swift services. Dotted command names from the prototype are retained for history only; do not extend them for product work.
 
 ## 1. Principles
 

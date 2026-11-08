@@ -2,7 +2,7 @@
 
 ## 1. Quy ước
 
-MUST = P0, SHOULD = P1, COULD = P2. Tất cả test IDs được đối chiếu trong `checklists/requirements-traceability.csv`. Nhóm module: HOST (H), AUTH (A), SSH (S), SFTP (F), SESSION (E), RDP (R), DATA (D), UX (U), NETWORK (N).
+MUST = P0, SHOULD = P1, COULD = P2.  Nhóm module: HOST (H), AUTH (A), SSH (S), SFTP (F), SESSION (E), RDP (R), DATA (D), UX (U), NETWORK (N).
 
 ## 2. Functional requirements
 

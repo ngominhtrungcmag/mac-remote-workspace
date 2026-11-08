@@ -15,6 +15,8 @@ Requires macOS 14 or later on Apple Silicon or Intel.
 
 Download the app from [GitHub Releases](https://github.com/ngominhtrungcmag/mac-remote-workspace/releases). To update, download and install the new release manually; version 1.0 has no automatic updater.
 
+Release builds are ad-hoc signed, not notarized. If Gatekeeper blocks the app, open it via right-click then Open, or allow it in System Settings, Privacy & Security.
+
 ## Build from source
 
 Install Xcode and its command line tools, then run:
@@ -23,11 +25,12 @@ Install Xcode and its command line tools, then run:
 ./scripts/build-freerdp-macos.sh
 swift build
 swift test
-./build-native.sh
 ./bundle-app.sh
 ```
 
-The app is produced in `.build/NativeApp/`. `./bundle-app.sh --install` installs it in `/Applications`, backing up an existing app. The FreeRDP build defaults to both architectures; set `ARCHS=arm64` or `ARCHS=x86_64` for a single architecture.
+`./build-native.sh` produces a debug build only; `./bundle-app.sh` already runs it for the release bundle.
+
+The app is produced in `.build/NativeApp/`. `./bundle-app.sh --install` installs it in `/Applications`, backing up an existing app. The FreeRDP build defaults to both architectures; for a single architecture set `ARCHS` for the FreeRDP build and the same value in `MRW_ARCHS` for the bundle, e.g. `ARCHS=arm64 ./scripts/build-freerdp-macos.sh && MRW_ARCHS=arm64 ./bundle-app.sh`.
 
 Open `MacRemoteWorkspace.xcodeproj` and run the shared `MacRemoteWorkspace-App` scheme after building FreeRDP. Select the `MacRemoteWorkspace-App` scheme and My Mac, then open a SwiftUI file and resume Canvas. For command-line builds, use `-scheme MacRemoteWorkspace-App`. Xcode compiles the app sources directly and builds the helper with SwiftPM; select a signing team locally if signing is required. SwiftPM tests run via `swift test`; the Xcode scheme has no Test action.
 
@@ -41,9 +44,10 @@ Run `./run-ssh-fixture.sh` and `./run-proxyjump-fixture.sh` for disposable local
 
 ## Screenshots
 
-TODO: add current screenshots in `evidence/`.
+![Workspace with groups](evidence/native-workspace-groups-disposable.png)
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development and [LICENSE](LICENSE) for the MIT license.
+![Empty host inventory](evidence/host-inventory-empty.png)
+
 ## Limitations
 
 - ProxyJump supports one hop and authenticates through the active SSH agent only; Keychain/password credentials are rejected for jump hosts. SFTP and host metrics do not support ProxyJump hosts yet and say so instead of connecting directly.
@@ -53,3 +57,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development and [LICENSE](LICENSE) fo
 - RDP credential delivery for CA-validated certificates is deferred until after 1.0.
 - SSH tabs are not restored between launches. Embedded RDP interoperability, clipboard behavior and keyboard layouts should be verified against the intended Windows server.
 - Updates are installed manually from GitHub Releases.
+
+## Reporting issues
+
+Use GitHub Issues. Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+
+## Contributing and license
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and [LICENSE](LICENSE) for the MIT license.

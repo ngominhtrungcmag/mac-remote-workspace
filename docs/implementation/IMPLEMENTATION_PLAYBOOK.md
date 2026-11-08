@@ -29,7 +29,7 @@ This plan does not claim that every old roadmap item is in the native applicatio
 - The sole active product code path is `Sources/**` and `Tests/**`. Do not extend `apps/desktop/**`, React/TypeScript packages, Tauri configuration, Rust crates, or the old TypeScript IPC contract.
 - Keep SwiftUI presentation separate from typed in-process AppCore service protocols. AppCore owns validation, persistence, trust decisions, and transport policy.
 - Coordinate before changing shared app-shell files, SQLite migrations, the session coordinator, SSH session UI, or service contracts. Use isolated worktrees for parallel tasks; do not overlap a shared-file owner.
-- `docs/implementation/evidence/**`, the design-kit source, and older prototype ADRs are provenance only. They may support historical claims but do not establish native behavior or test status.
+- The design-kit source and older prototype ADRs are provenance only. They may support historical claims but do not establish native behavior or test status.
 
 ## Native validation baseline
 

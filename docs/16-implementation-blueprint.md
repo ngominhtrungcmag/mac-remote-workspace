@@ -67,7 +67,7 @@ No new package or transport dependency is approved by this blueprint. Any substa
 
 ## 6. Incremental implementation slices
 
-1. **Credentials and SSH auth:** implement Keychain references and connect credential resolution only after strict host verification. See [`TASK-01-NATIVE-CREDENTIALS.md`](implementation/TASK-01-NATIVE-CREDENTIALS.md).
+1. **Credentials and SSH auth:** implement Keychain references and connect credential resolution only after strict host verification.
 2. **SSH session lifecycle:** complete the managed PTY session, multiple-session behavior, cancellation, reconnect, and disconnected restoration states with fixture evidence.
 3. **SFTP browse and transfers:** validate the native transport first; add safe paths, queue/cancellation, overwrite confirmation, and interrupted-transfer recovery.
 4. **P0 completion:** close import/export, workspace restoration, accessibility, redacted diagnostics, data recovery, and release gaps against FR/TC IDs.

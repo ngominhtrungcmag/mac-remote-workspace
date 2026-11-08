@@ -34,7 +34,5 @@ The D01–D16 working documents below preserve the original requirement IDs and 
 ## Project instructions
 
 - [Implementation playbook](implementation/IMPLEMENTATION_PLAYBOOK.md)
-- [Task 01 — Native Keychain credentials and SSH authentication](implementation/TASK-01-NATIVE-CREDENTIALS.md)
-- [Historical Task 00 — Tauri kickoff](implementation/TASK-00-KICKOFF.md)
 
-The superseded prototype and historical records are preserved on the `archive/pre-oss-cleanup` branch.
+Earlier prototype history is not published. ADRs and design documents predate the move of the Swift package to the repository root, may reference old `apps/macos/` or Tauri-prototype paths, and are partly written in Vietnamese.

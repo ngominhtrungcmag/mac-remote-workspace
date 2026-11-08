@@ -10,8 +10,6 @@
 locks/
 tasks/
 skills-lock.json
-apps/macos/.build/
-apps/macos/vendor
 .build/
 .swiftpm/
 
@@ -21,3 +19,11 @@ apps/macos/vendor
 **/xcuserdata/
 *.xcuserstate
 /build/
+*.local.*
+DerivedData/
+*.xcarchive
+*.dmg
+*.zip
+SHA256SUMS.txt
+CLAUDE.md
+GEMINI.md

@@ -82,7 +82,7 @@ flowchart TD
 
 ## 4. Next implementation slices
 
-**Next slice:** native Keychain credentials and SSH authentication, preserving the existing strict host-trust gate; see `docs/implementation/TASK-01-NATIVE-CREDENTIALS.md`. Deliverable: supported authentication with canary-redaction and negative trust tests.
+**Next slice:** native Keychain credentials and SSH authentication, preserving the existing strict host-trust gate. Deliverable: supported authentication with canary-redaction and negative trust tests.
 
 **Following slices:** complete managed session lifecycle, then validate and implement SFTP browse/transfers on a disposable local fixture. Estimates and sequencing are tracked in the implementation playbook.
 
