@@ -613,12 +613,21 @@ public final class SSHSessionViewModel: ObservableObject {
         case .connecting:
           self.status = .connecting
         case .running:
-          self.reconnectBackoff.reset()
+          // Launch is not proof of a connection (auth may still fail); backoff is settled on termination.
           self.status = .running
         case .disconnected(let code):
           self.drainOutput()
           self.localTunnels = []
           self.cleanupEphemeralCredential()
+          self.reconnectBackoff.recordTermination(exitCode: code)
+          if let code {
+            let result = SSHPasswordAuthenticationService.evaluateTermination(
+              exitCode: code, terminalOutput: self.terminalOutput)
+            if result.isAuthFailure {
+              self.status = .failed(result.userFacingMessage)
+              return
+            }
+          }
           self.status = .disconnected(exitCode: code)
         case .failed(let msg):
           self.drainOutput()

@@ -92,4 +92,16 @@ final class SSHReconnectPolicyTests: XCTestCase {
       XCTAssertEqual(error as? NativeSSHError, .sessionNotRunning)
     }
   }
+
+  func testExit255BeforeConnectCountsAsFailureOtherExitResets() {
+    var b = SSHReconnectBackoff(base: 4, cap: 30)
+    let now = Date()
+    b.recordTermination(exitCode: 255, now: now)
+    XCTAssertEqual(b.consecutiveFailures, 1)
+    XCTAssertGreaterThan(b.remaining(now: now), 0)
+    b.recordTermination(exitCode: 0, now: now)
+    XCTAssertEqual(b.consecutiveFailures, 0)
+    XCTAssertTrue(SSHPasswordAuthenticationService.evaluateTermination(
+      exitCode: 255, terminalOutput: "Permission denied (password).").isAuthFailure)
+  }
 }

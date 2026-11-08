@@ -153,7 +153,8 @@ public final class NativeSSHHostTrustService: Sendable {
   private let audit: AuditSink?
 
   public init(knownHostsFileURL: URL, audit: AuditSink? = nil) {
-    self.knownHostsFileURL = knownHostsFileURL
+    // Resolve symlinked dotfiles once; O_NOFOLLOW checks then apply to the real target.
+    self.knownHostsFileURL = knownHostsFileURL.resolvingSymlinksInPath()
     self.audit = audit
   }
 
@@ -442,43 +443,48 @@ public final class NativeSSHHostTrustService: Sendable {
     try Self.validateEndpoint(host: host, port: port)
 
     let recordedKeys = try queryRecordedKeys(host: host, port: port, isCancelled: isCancelled)
-    let keyFromRoute = try probePresentedKey(
+    let keysFromRoute = try probePresentedKeys(
       host: probeHost,
       port: probePort,
       timeoutSeconds: probeTimeoutSeconds,
       isCancelled: isCancelled
     )
-    let presentedKey: SSHHostKeyRecord
+    let presentedKeys: [SSHHostKeyRecord]
     if probeHost == host && probePort == port {
-      presentedKey = keyFromRoute
+      presentedKeys = keysFromRoute
     } else {
       // Rebind the parsed public key to the requested endpoint before exposing the challenge or
       // persisting trust. This keeps localhost forwarding metadata out of known_hosts.
-      presentedKey = try parseHostKeyLine(
-        "\(Self.formatHostPattern(host: host, port: port)) \(keyFromRoute.keyType) \(keyFromRoute.keyBase64)",
-        isCancelled: isCancelled
-      )
-    }
-
-    if recordedKeys.isEmpty {
-      let challenge = SSHHostTrustChallenge(
-        host: host,
-        port: port,
-        presentedKey: presentedKey
-      )
-      return .unknown(challenge: challenge)
-    }
-
-    // Check if any recorded key matches the presented key
-    for recorded in recordedKeys {
-      if recorded.keyType == presentedKey.keyType && recorded.keyBase64 == presentedKey.keyBase64 {
-        return .trusted(matchedKey: recorded)
+      presentedKeys = try keysFromRoute.map {
+        try parseHostKeyLine(
+          "\(Self.formatHostPattern(host: host, port: port)) \($0.keyType) \($0.keyBase64)",
+          isCancelled: isCancelled
+        )
       }
     }
+    let status = Self.classify(recordedKeys: recordedKeys, presentedKeys: presentedKeys, host: host, port: port)
+    if case .mismatch = status { record("ssh.hostkey.rejected", host, port, .failure, "mismatch") }
+    return status
+  }
 
-    // Keys exist for this endpoint, but none matched the presented key
-    record("ssh.hostkey.rejected", host, port, .failure, "mismatch")
-    return .mismatch(recordedKeys: recordedKeys, presentedKey: presentedKey)
+  /// `presentedKeys[0]` is the preferred key shown for first-use approval.
+  /// - trusted: any presented key equals a recorded key of the same type.
+  /// - mismatch: a recorded key has a type the server also offers, but the key differs.
+  /// - unknown: no type overlap (nothing recorded contradicts the server).
+  public static func classify(
+    recordedKeys: [SSHHostKeyRecord],
+    presentedKeys: [SSHHostKeyRecord],
+    host: String,
+    port: Int
+  ) -> SSHHostTrustStatus {
+    for recorded in recordedKeys
+    where presentedKeys.contains(where: { $0.keyType == recorded.keyType && $0.keyBase64 == recorded.keyBase64 }) {
+      return .trusted(matchedKey: recorded)
+    }
+    if let conflicting = presentedKeys.first(where: { p in recordedKeys.contains { $0.keyType == p.keyType } }) {
+      return .mismatch(recordedKeys: recordedKeys, presentedKey: conflicting)
+    }
+    return .unknown(challenge: SSHHostTrustChallenge(host: host, port: port, presentedKey: presentedKeys[0]))
   }
 
   // MARK: - Query Recorded Keys
@@ -522,6 +528,9 @@ public final class NativeSSHHostTrustService: Sendable {
   /// Opens the trust store through its verified parent directory, refusing path redirection.
   private func openSecureKnownHostsFile(createIfMissing: Bool, writable: Bool = false) throws -> Int32? {
     let parentDirectory = knownHostsFileURL.deletingLastPathComponent()
+    // Only chmod what we create ourselves; never rewrite permissions of the user's own files.
+    let directoryExisted = FileManager.default.fileExists(atPath: parentDirectory.path)
+    let fileExisted = FileManager.default.fileExists(atPath: knownHostsFileURL.path)
     if createIfMissing {
       do {
         try FileManager.default.createDirectory(
@@ -557,7 +566,7 @@ public final class NativeSSHHostTrustService: Sendable {
       throw SSHHostTrustError.knownHostsFileUnwritable(knownHostsFileURL.path)
     }
 
-    if createIfMissing, directoryPermissions != 0o700, fchmod(directoryFD, 0o700) != 0 {
+    if createIfMissing, !directoryExisted, directoryPermissions != 0o700, fchmod(directoryFD, 0o700) != 0 {
       throw SSHHostTrustError.knownHostsFileUnwritable(parentDirectory.path)
     }
 
@@ -583,10 +592,7 @@ public final class NativeSSHHostTrustService: Sendable {
       throw SSHHostTrustError.knownHostsFileUnwritable(knownHostsFileURL.path)
     }
 
-    if !createIfMissing, directoryPermissions != 0o700, fchmod(directoryFD, 0o700) != 0 {
-      throw SSHHostTrustError.knownHostsFileUnwritable(parentDirectory.path)
-    }
-    if filePermissions != 0o600, fchmod(fileFD, 0o600) != 0 {
+    if createIfMissing, !fileExisted, filePermissions != 0o600, fchmod(fileFD, 0o600) != 0 {
       throw SSHHostTrustError.knownHostsFileUnwritable(knownHostsFileURL.path)
     }
 
@@ -691,6 +697,16 @@ public final class NativeSSHHostTrustService: Sendable {
     timeoutSeconds: Int = 5,
     isCancelled: @escaping @Sendable () -> Bool = { false }
   ) throws -> SSHHostKeyRecord {
+    try probePresentedKeys(host: host, port: port, timeoutSeconds: timeoutSeconds, isCancelled: isCancelled)[0]
+  }
+
+  /// All scanned host keys, preferred (ed25519, then ecdsa, then others) first.
+  public func probePresentedKeys(
+    host: String,
+    port: Int,
+    timeoutSeconds: Int = 5,
+    isCancelled: @escaping @Sendable () -> Bool = { false }
+  ) throws -> [SSHHostKeyRecord] {
     try Self.validateEndpoint(host: host, port: port)
     let boundedTimeout = min(30, max(1, timeoutSeconds))
 
@@ -734,11 +750,13 @@ public final class NativeSSHHostTrustService: Sendable {
     }
 
     // Prefer ed25519, then ecdsa, then rsa
-    let preferredLine = candidateLines.first { $0.contains("ssh-ed25519") }
-      ?? candidateLines.first { $0.contains("ecdsa-") }
-      ?? candidateLines[0]
-
-    return try parseHostKeyLine(preferredLine, isCancelled: isCancelled)
+    func rank(_ line: String) -> Int {
+      line.contains("ssh-ed25519") ? 0 : line.contains("ecdsa-") ? 1 : 2
+    }
+    let ordered = candidateLines.enumerated()
+      .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }
+      .map(\.element)
+    return try ordered.map { try parseHostKeyLine($0, isCancelled: isCancelled) }
   }
 
   // MARK: - Key Inspection & Fingerprinting

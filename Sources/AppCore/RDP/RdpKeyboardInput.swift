@@ -8,6 +8,8 @@ public struct RdpKeyboardInput {
   private var remoteModifiers: [UInt16: RdpKeyboardEvent] = [:]
   private var windowsCommand = false
   private var commandUsed = false
+  /// Keys pressed while Command was held; AppKit never sends their keyUp.
+  private var commandKeys: Set<UInt16> = []
   private static let commands: Set<UInt16> = [0x37, 0x36]
   private static let shortcutKeys: Set<UInt16> = [0x08, 0x07, 0x09, 0x00, 0x06, 0x03, 0x0D]
 
@@ -29,14 +31,23 @@ public struct RdpKeyboardInput {
       tap = [event, event.released]
       commandUsed = true
     }
-    if modifiers.isDisjoint(with: Self.commands) { windowsCommand = false }
-    return tap + syncModifiers()
+    var released: [RdpKeyboardEvent] = []
+    if modifiers.isDisjoint(with: Self.commands) {
+      windowsCommand = false
+      for k in commandKeys.sorted() {
+        if let event = keys.removeValue(forKey: k) { released.append(event.released) }
+        shortcuts.remove(k)
+      }
+      commandKeys.removeAll()
+    }
+    return tap + released + syncModifiers()
   }
 
   public mutating func keyDown(_ key: UInt16) -> [RdpKeyboardEvent] {
     guard let event = RdpScancodeMapper.mapMacKeyCode(key) else { return [] }
     if keys[key] == nil, !modifiers.isDisjoint(with: Self.commands) {
       commandUsed = true
+      commandKeys.insert(key)
       if Self.isCommandShortcut(key) {
         shortcuts.insert(key)
       } else {
@@ -51,6 +62,7 @@ public struct RdpKeyboardInput {
   public mutating func keyUp(_ key: UInt16) -> [RdpKeyboardEvent] {
     guard let event = keys.removeValue(forKey: key) else { return [] }
     shortcuts.remove(key)
+    commandKeys.remove(key)
     return [event.released] + syncModifiers()
   }
 

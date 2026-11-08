@@ -33,6 +33,12 @@ public struct SSHReconnectBackoff: Sendable, Equatable {
     notBefore = now.addingTimeInterval(delay(afterFailures: consecutiveFailures, sample: sample))
   }
 
+  /// ssh exits 255 for connect/auth errors (reported only after launch, so launch alone is not "connected"):
+  /// count those as failures; any other exit means the session ran, so clear the throttle.
+  public mutating func recordTermination(exitCode: Int32?, now: Date = Date(), sample: Double = .random(in: 0..<1)) {
+    if exitCode == 255 { recordFailure(now: now, sample: sample) } else { reset() }
+  }
+
   /// Successful connection or explicit user cancel clears the throttle.
   public mutating func reset() {
     consecutiveFailures = 0

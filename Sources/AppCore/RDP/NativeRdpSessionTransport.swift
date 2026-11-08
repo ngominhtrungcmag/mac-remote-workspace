@@ -274,6 +274,11 @@ public final class NativeRdpSession: RdpSessionTransport, @unchecked Sendable {
     do {
       // start inside the body so no helper message can arrive before the milestone is armed
       try await awaitMilestone {
+        // closeAndAbort may have run before `client` was visible to it; never start a helper then.
+        if lock.withLock({ isClosed }) {
+          resumeMilestone(.failure(RdpSessionError.helperProcessFailed("Session closed before start.")))
+          return
+        }
         do { try client.start() } catch { resumeMilestone(.failure(error)) }
       }
     } catch {

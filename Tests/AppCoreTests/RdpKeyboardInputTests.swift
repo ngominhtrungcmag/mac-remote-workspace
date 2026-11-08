@@ -27,6 +27,16 @@ final class RdpKeyboardInputTests: XCTestCase {
     XCTAssertEqual(input.releaseAll(), [])
   }
 
+  func testCommandReleaseWithoutKeyUpReleasesKeyAndControl() {
+    var input = RdpKeyboardInput()
+    _ = input.modifierChanged(0x37)
+    _ = input.keyDown(0x08)  // Cmd+C; AppKit never sends keyUp
+    XCTAssertEqual(
+      input.modifierChanged(0x37),
+      [RdpKeyboardEvent(scancode: 0x2E, isKeyUp: true), RdpKeyboardEvent(scancode: 0x1D, isKeyUp: true)])
+    XCTAssertEqual(input.releaseAll(), [])
+  }
+
   func testRepeatAndPhysicalControlAreBalanced() {
     var input = RdpKeyboardInput()
     _ = input.modifierChanged(0x3B)
@@ -43,8 +53,8 @@ final class RdpKeyboardInputTests: XCTestCase {
     _ = input.modifierChanged(0x36)
     XCTAssertEqual(input.modifierChanged(0x3C), [RdpKeyboardEvent(scancode: 0x36)])
     XCTAssertEqual(input.keyDown(0x06), [RdpKeyboardEvent(scancode: 0x1D), RdpKeyboardEvent(scancode: 0x2C)])
-    XCTAssertEqual(input.modifierChanged(0x36), [])
-    XCTAssertEqual(input.keyUp(0x06), [RdpKeyboardEvent(scancode: 0x2C, isKeyUp: true), RdpKeyboardEvent(scancode: 0x1D, isKeyUp: true)])
+    XCTAssertEqual(input.modifierChanged(0x36), [RdpKeyboardEvent(scancode: 0x2C, isKeyUp: true), RdpKeyboardEvent(scancode: 0x1D, isKeyUp: true)])
+    XCTAssertEqual(input.keyUp(0x06), [])
     XCTAssertEqual(input.releaseAll(), [RdpKeyboardEvent(scancode: 0x36, isKeyUp: true)])
   }
 

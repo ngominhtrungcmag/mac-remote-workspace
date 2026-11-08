@@ -276,6 +276,26 @@ final class NativeSSHHostTrustTests: XCTestCase {
     }
   }
 
+  func testClassifyAnyScannedKeyMatchOfSameTypeIsTrusted() {
+    func key(_ type: String, _ b64: String) -> SSHHostKeyRecord {
+      SSHHostKeyRecord(rawLine: "h \(type) \(b64)", keyType: type, keyBase64: b64, comment: nil, algorithm: type,
+        bitLength: nil, fingerprintSHA256: "x", visualArt: nil)
+    }
+    let ed = key("ssh-ed25519", "AAA"), ecdsa = key("ecdsa-sha2-nistp256", "BBB"), rsa = key("ssh-rsa", "CCC")
+    // Trusted via ecdsa only although ed25519 (preferred) is offered and not recorded.
+    guard case .trusted = NativeSSHHostTrustService.classify(recordedKeys: [ecdsa], presentedKeys: [ed, ecdsa, rsa], host: "h", port: 22)
+    else { return XCTFail("expected trusted") }
+    // Same type, different key: mismatch.
+    let rotated = key("ecdsa-sha2-nistp256", "ZZZ")
+    guard case .mismatch(_, let shown) = NativeSSHHostTrustService.classify(recordedKeys: [ecdsa], presentedKeys: [ed, rotated], host: "h", port: 22)
+    else { return XCTFail("expected mismatch") }
+    XCTAssertEqual(shown.keyBase64, "ZZZ")
+    // No type overlap: unknown, preferred key presented.
+    guard case .unknown(let challenge) = NativeSSHHostTrustService.classify(recordedKeys: [rsa], presentedKeys: [ed, ecdsa], host: "h", port: 22)
+    else { return XCTFail("expected unknown") }
+    XCTAssertEqual(challenge.presentedKey.keyType, "ssh-ed25519")
+  }
+
   func testQuerySecuresOwnedKnownHostsPermissions() throws {
     let directory = tempDirectory.appendingPathComponent("shared_permissions", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
@@ -287,8 +307,9 @@ final class NativeSSHHostTrustTests: XCTestCase {
     let keys = try NativeSSHHostTrustService(knownHostsFileURL: knownHostsURL).queryRecordedKeys(host: "127.0.0.1", port: 22)
 
     XCTAssertEqual(keys.count, 1)
-    XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? Int, 0o700)
-    XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: knownHostsURL.path)[.posixPermissions] as? Int, 0o600)
+    // Pre-existing user files keep their permissions; only app-created ones are chmod'ed.
+    XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? Int, 0o755)
+    XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: knownHostsURL.path)[.posixPermissions] as? Int, 0o644)
   }
 
   func testQueryFailsClosedOnWritableDirectoryAndSymlinkedKnownHosts() throws {
@@ -325,12 +346,8 @@ final class NativeSSHHostTrustTests: XCTestCase {
       .write(to: target, atomically: true, encoding: .utf8)
     try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: target)
 
-    XCTAssertThrowsError(try NativeSSHHostTrustService(knownHostsFileURL: symlink).queryRecordedKeys(host: "127.0.0.1", port: 22)) { error in
-      guard case SSHHostTrustError.knownHostsUnparseable = error else {
-        XCTFail("Expected symlinked trust file to fail closed, got \(error)")
-        return
-      }
-    }
+    // Symlinked dotfiles are resolved (owner still verified on the target).
+    XCTAssertEqual(try NativeSSHHostTrustService(knownHostsFileURL: symlink).queryRecordedKeys(host: "127.0.0.1", port: 22).count, 1)
 
     let parentTarget = tempDirectory.appendingPathComponent("actual_parent", isDirectory: true)
     let parentSymlink = tempDirectory.appendingPathComponent("parent_symlink", isDirectory: true)
@@ -339,15 +356,9 @@ final class NativeSSHHostTrustTests: XCTestCase {
       .write(to: parentTarget.appendingPathComponent("known_hosts"), atomically: true, encoding: .utf8)
     try FileManager.default.createSymbolicLink(at: parentSymlink, withDestinationURL: parentTarget)
 
-    XCTAssertThrowsError(
+    XCTAssertEqual(
       try NativeSSHHostTrustService(knownHostsFileURL: parentSymlink.appendingPathComponent("known_hosts"))
-        .queryRecordedKeys(host: "127.0.0.1", port: 22)
-    ) { error in
-      guard case SSHHostTrustError.knownHostsUnparseable = error else {
-        XCTFail("Expected symlinked trust directory to fail closed, got \(error)")
-        return
-      }
-    }
+        .queryRecordedKeys(host: "127.0.0.1", port: 22).count, 1)
   }
 
   func testSessionCoordinatorRejectsInvalidatedPersistence() {
