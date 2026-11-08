@@ -19,7 +19,7 @@ Release builds are ad-hoc signed, not notarized. If Gatekeeper blocks the app, o
 
 ## Build from source
 
-Install Xcode and its command line tools, then run:
+Install Xcode 27 or later (Swift 6.4) and its command line tools, then run:
 
 ```sh
 ./scripts/build-freerdp-macos.sh

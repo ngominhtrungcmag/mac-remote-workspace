@@ -6,7 +6,7 @@ permissions:
   contents: write
 jobs:
   release:
-    runs-on: macos-latest
+    runs-on: xcode-27  # Xcode 26.6 (Swift 6.3) crashes type-checking AppCore
     steps:
       - uses: actions/checkout@v4
         with:

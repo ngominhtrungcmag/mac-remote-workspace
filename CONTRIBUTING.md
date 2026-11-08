@@ -1,6 +1,6 @@
 # Contributing
 
-Install Xcode and its command line tools on macOS 14 or later. Build the FreeRDP dependency and the native app from the repository root:
+Install Xcode 27 or later (Swift 6.4) and its command line tools. The app runs on macOS 14 or later. Build the FreeRDP dependency and the native app from the repository root:
 
 ```sh
 ./scripts/build-freerdp-macos.sh
