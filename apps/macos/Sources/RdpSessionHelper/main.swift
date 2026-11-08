@@ -1,0 +1,3 @@
+import AppCore
+
+RdpHelperMain.run()

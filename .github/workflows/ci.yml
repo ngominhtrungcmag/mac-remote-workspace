@@ -1,0 +1,30 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  native:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/cache@v4
+        id: freerdp
+        with:
+          path: apps/macos/vendor
+          key: freerdp-${{ runner.os }}-${{ hashFiles('scripts/build-freerdp-macos.sh') }}
+      - if: steps.freerdp.outputs.cache-hit != 'true'
+        run: ./scripts/build-freerdp-macos.sh
+      - run: swift build --package-path apps/macos
+      - run: swift test --package-path apps/macos
+      - run: ./apps/macos/bundle-app.sh
+      - name: Verify bundle
+        run: |
+          app='apps/macos/.build/NativeApp/Mac Remote Workspace.app'
+          plutil -lint "$app/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDevelopmentRegion' "$app/Contents/Info.plist")" = en
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleLocalizations:1' "$app/Contents/Info.plist")" = vi
+          test -n "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+          test -n "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")"
+          test -f "$app/Contents/Resources/LICENSE"
+          test -f "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
+          codesign --verify --strict "$app"

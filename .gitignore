@@ -1,0 +1,14 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+*.local
+*.log
+.agents/
+.claude/
+.squad/
+locks/
+tasks/
+skills-lock.json
+apps/macos/.build/
+apps/macos/vendor
