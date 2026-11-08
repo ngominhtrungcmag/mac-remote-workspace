@@ -20,6 +20,8 @@ jobs:
       - if: steps.freerdp.outputs.cache-hit != 'true'
         run: ./scripts/build-freerdp-macos.sh
       - run: swift build
+      # FreeRDP 3.10.2 GetComputerNameA rejects hostnames of 31+ chars (runner names are longer).
+      - run: sudo scutil --set HostName mrw-ci && hostname
       - run: swift test
       - run: ./bundle-app.sh
       - name: Verify bundle
