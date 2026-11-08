@@ -1,6 +1,6 @@
 # Project documents
 
-The native Swift implementation in `apps/macos/` is the only active product target. ADR-010 is accepted and supersedes the implementation technology choices in the original D01–D16 design-kit extracts. The original source is preserved in `reference/`; use it for product intent and historical provenance, not as current framework guidance.
+The native Swift implementation at the repository root is the only active product target. ADR-010 is accepted and supersedes the implementation technology choices in the original D01–D16 design-kit extracts. The original source is preserved in `reference/`; use it for product intent and historical provenance, not as current framework guidance.
 
 `docs/implementation/IMPLEMENTATION_PLAYBOOK.md` and its active task define the current delivery plan. `docs/08-ipc-contracts.md` is retained as a logical service-contract reference; there is no Tauri IPC layer in the native app.
 

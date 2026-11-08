@@ -14,18 +14,18 @@ jobs:
       - uses: actions/cache@v4
         id: freerdp
         with:
-          path: apps/macos/vendor
+          path: vendor
           key: freerdp-${{ runner.os }}-${{ hashFiles('scripts/build-freerdp-macos.sh') }}
       - if: steps.freerdp.outputs.cache-hit != 'true'
         run: ./scripts/build-freerdp-macos.sh
-      - run: swift test --package-path apps/macos
-      - run: ./apps/macos/bundle-app.sh
+      - run: swift test
+      - run: ./bundle-app.sh
       # ponytail: ad-hoc signed only; Developer ID signing + notarization run locally via scripts/release-macos.sh.
       - name: Package
         run: |
           v=${GITHUB_REF_NAME#v}
           zip="Mac-Remote-Workspace-$v-universal.zip"
-          ditto -c -k --keepParent "apps/macos/.build/NativeApp/Mac Remote Workspace.app" "$zip"
+          ditto -c -k --keepParent ".build/NativeApp/Mac Remote Workspace.app" "$zip"
           shasum -a 256 "$zip" > SHA256SUMS.txt
       - name: Upload to release
         env:

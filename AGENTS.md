@@ -2,7 +2,7 @@
 
 ## Mission
 
-Build a macOS-first, local-first SSH/SFTP workspace as a native Swift application. The sole implementation target is `apps/macos/`: SwiftUI/AppKit UI, Swift `AppCore`, SQLite metadata, Apple Keychain, and macOS system services. Deliver safe, working vertical slices; do not treat the historical Tauri prototype as the product target.
+Build a macOS-first, local-first SSH/SFTP workspace as a native Swift application. The sole implementation target is `repository root`: SwiftUI/AppKit UI, Swift `AppCore`, SQLite metadata, Apple Keychain, and macOS system services. Deliver safe, working vertical slices; do not treat the historical Tauri prototype as the product target.
 
 ## Source of truth
 
@@ -10,13 +10,13 @@ Build a macOS-first, local-first SSH/SFTP workspace as a native Swift applicatio
 2. Read product and behavior requirements in `docs/01-vision-prd.md`, `docs/02-srs.md`, and `docs/03-user-journeys.md`.
 3. Read `docs/05-architecture.md`, `docs/06-data-model.md`, `docs/07-protocols-sessions.md`, and `docs/09-security.md`.
 4. Read `docs/10-test-plan.md`, `docs/11-build-release-runbook.md`, `docs/12-roadmap-backlog.md`, `docs/13-adr-risks.md`, and `docs/16-implementation-blueprint.md`.
-5. Read `docs/implementation/IMPLEMENTATION_PLAYBOOK.md`, the active task under `docs/implementation/`, and `apps/macos/README.md` before implementation. `TASK-00-KICKOFF.md` records a superseded Tauri bootstrap and is historical only.
+5. Read `docs/implementation/IMPLEMENTATION_PLAYBOOK.md`, the active task under `docs/implementation/`, and `README.md` before implementation. `TASK-00-KICKOFF.md` records a superseded Tauri bootstrap and is historical only.
 
 The original prototype and historical records are preserved on the `archive/pre-oss-cleanup` branch. Current implementation decisions in ADR-010 and these instructions take precedence.
 
 ## Implementation boundary
 
-- Change product code only under `apps/macos/**`, unless the user explicitly requests historical prototype maintenance or a migration of another path.
+- Change product code only under `Sources/**` and `Tests/**`, unless the user explicitly requests historical prototype maintenance or a migration of another path.
 - Do not add product features to the superseded prototype preserved on the archive branch.
 - Use typed Swift service protocols between SwiftUI and `AppCore`; views do not access SQLite, Keychain, SSH, or SFTP directly.
 - Validate input at service boundaries. Use versioned, transactional SQLite migrations and enable foreign keys on every connection.
@@ -45,14 +45,14 @@ The original prototype and historical records are preserved on the `archive/pre-
 
 ## Ownership and collaboration
 
-Work on one vertical slice at a time in an isolated worktree when other work is active. Keep `apps/macos/Sources/AppCore/**`, `apps/macos/Sources/MacRemoteWorkspace/**`, migrations, and Swift tests scoped to the assigned task. Coordinate before editing shared SSH session UI, SQLite migrations, or app-shell files. Do not launch workers unless the user explicitly requests delegation.
+Work on one vertical slice at a time in an isolated worktree when other work is active. Keep `Sources/AppCore/**`, `Sources/MacRemoteWorkspace/**`, migrations, and Swift tests scoped to the assigned task. Coordinate before editing shared SSH session UI, SQLite migrations, or app-shell files. Do not launch workers unless the user explicitly requests delegation.
 
 ## Definition of Done
 
 1. Cite applicable US/FR/TC/SEC IDs and declare the exact in-scope and out-of-scope paths.
 2. Implement real behavior and its error, empty, and loading states; no silent fake data.
 3. Update appropriate Swift tests, including negative/security cases.
-4. Run `swift build --package-path apps/macos`, `swift test --package-path apps/macos`, and `apps/macos/build-native.sh` where applicable; document anything unavailable. Run `apps/macos/run-ssh-fixture.sh` for SSH trust/session changes.
+4. Run `swift build`, `swift test`, and `./build-native.sh` where applicable; document anything unavailable. Run `./run-ssh-fixture.sh` for SSH trust/session changes.
 5. Include screenshots for UX changes and disposable-server evidence for protocol changes.
 6. Report changed paths, commands/results, risks, and known limitations.
 7. Keep credentials out of the repository and logs; host-key failure must reject authentication.

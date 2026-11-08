@@ -12,3 +12,12 @@ tasks/
 skills-lock.json
 apps/macos/.build/
 apps/macos/vendor
+.build/
+.swiftpm/
+
+/vendor/
+
+# Xcode user-specific settings
+**/xcuserdata/
+*.xcuserstate
+/build/

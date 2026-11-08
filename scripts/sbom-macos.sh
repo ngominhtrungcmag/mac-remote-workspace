@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # SEC-T08: dependency + license inventory -> docs/implementation/SBOM.md. Offline.
-# Sources: apps/macos/Package.resolved, .build/checkouts/*/LICENSE* (if resolved), scripts/build-freerdp-macos.sh.
+# Sources: Package.resolved, .build/checkouts/*/LICENSE* (if resolved), scripts/build-freerdp-macos.sh.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-RESOLVED="$ROOT/apps/macos/Package.resolved"
-CHECKOUTS="$ROOT/apps/macos/.build/checkouts"
+RESOLVED="$ROOT/Package.resolved"
+CHECKOUTS="$ROOT/.build/checkouts"
 OUT="${1:-$ROOT/docs/implementation/SBOM.md}"
 BUILD="$ROOT/scripts/build-freerdp-macos.sh"
-frdp="$(sed -n 's/^FREERDP_VERSION="\${FREERDP_VERSION:-\([^}]*\)}"/\1/p' "$BUILD")"
-ossl="$(sed -n 's/^OPENSSL_VERSION="\${OPENSSL_VERSION:-\([^}]*\)}"/\1/p' "$BUILD")"
+frdp="$(sed -n 's/^FREERDP_VERSION="\([^"]*\)"$/\1/p' "$BUILD")"
+ossl="$(sed -n 's/^OPENSSL_VERSION="\([^"]*\)"$/\1/p' "$BUILD")"
 
 # Classify the license file of a checkout dir by characteristic text.
 detect() {

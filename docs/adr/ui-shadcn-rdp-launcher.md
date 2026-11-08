@@ -1,6 +1,6 @@
 # ADR: Session workspace UI and external Windows RDP
 
-> **Historical React/Tauri UI decision.** Tailwind/shadcn and Rust command details below are superseded by the Native Swift target. Retain external RDP workflow and safety findings only where they match current D02/D12 requirements; this ADR is not implementation guidance for `apps/macos/`.
+> **Historical React/Tauri UI decision.** Tailwind/shadcn and Rust command details below are superseded by the Native Swift target. Retain external RDP workflow and safety findings only where they match current D02/D12 requirements; this ADR is not implementation guidance for the current root Swift package.
 
 Status: Accepted for local implementation  
 Date: 2026-10-27

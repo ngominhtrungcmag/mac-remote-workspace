@@ -1,6 +1,6 @@
 #!/bin/sh
 # Developer ID sign (Hardened Runtime) + notarize + staple the native app bundle (US-016, NFR-011, TC-020).
-# Usage: scripts/release-macos.sh [path/to/App.app]   (build first: apps/macos/bundle-app.sh)
+# Usage: ./scripts/release-macos.sh [path/to/App.app]   (build first: ./bundle-app.sh)
 # Env:   DEVELOPER_ID    e.g. "Developer ID Application: Name (TEAMID)"  (unset => dry-run)
 #        NOTARY_PROFILE  notarytool keychain profile (xcrun notarytool store-credentials); unset => skip notarization
 #        DRY_RUN=1       force dry-run (print commands only)
@@ -8,7 +8,7 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-app=${1:-"$root/apps/macos/.build/NativeApp/Mac Remote Workspace.app"}
+app=${1:-"$root/.build/NativeApp/Mac Remote Workspace.app"}
 ent="$root/scripts/MacRemoteWorkspace.entitlements"
 zip="${app%.app}.notarize.zip"
 

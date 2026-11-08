@@ -1,29 +1,24 @@
 # D16 — Native Swift Implementation Blueprint
 
-**Active target:** `apps/macos/`, as decided in [ADR-010](adr/native-swift-target.md). This blueprint supersedes the React/Tauri/Rust repository proposal in the original Design Kit. That proposal remains in `docs/reference/` as historical source material and is not a current implementation option.
+**Active target:** the repository root, as decided in [ADR-010](adr/native-swift-target.md). This blueprint supersedes the React/Tauri/Rust repository proposal in the original Design Kit. That proposal remains in `docs/reference/` as historical source material and is not a current implementation option.
 
 ## 1. Active repository layout
 
 ```text
 mac-remote-workspace/
-├── apps/macos/
-│   ├── Package.swift
-│   ├── Sources/
-│   │   ├── AppCore/                 # domain policy, storage, SSH/session services
-│   │   │   ├── Migrations/          # versioned SQLite migrations
-│   │   │   ├── NativeSSHHostTrustService.swift
-│   │   │   ├── NativeSSHSessionCoordinator.swift
-│   │   │   ├── NativeSSHTransport.swift
-│   │   │   ├── SQLiteHostRepository.swift
-│   │   │   ├── SSHOutputBuffer.swift
-│   │   │   └── WorkspaceStore.swift
-│   │   └── MacRemoteWorkspace/      # SwiftUI/AppKit application and views
-│   ├── Tests/AppCoreTests/          # Swift package tests
-│   ├── run-ssh-fixture.sh           # disposable loopback SSH fixture
-│   ├── build-native.sh
-│   └── README.md
-├── docs/                            # active requirements, plan, ADRs, runbooks
-└── docs/implementation/evidence/    # historical prototype evidence; not native acceptance evidence
+├── Package.swift
+├── Sources/
+│   ├── AppCore/                 # domain services, persistence and transports
+│   │   ├── Migrations/
+│   │   └── Resources/
+│   ├── MacRemoteWorkspace/      # SwiftUI/AppKit application
+│   └── RdpSessionHelper/
+├── Tests/                       # Swift package tests
+├── Resources/                   # application icon
+├── run-ssh-fixture.sh           # disposable loopback SSH fixture
+├── build-native.sh
+├── README.md
+└── docs/                        # requirements, plans, ADRs and runbooks
 ```
 
 The root `apps/desktop/`, React/TypeScript packages, Rust crates, and IPC contract are historical prototype artifacts. Do not use them as the active feature layout, dependency source, or acceptance evidence.
@@ -49,7 +44,7 @@ The root `apps/desktop/`, React/TypeScript packages, Rust crates, and IPC contra
 
 ## 4. Data and migration conventions
 
-- Add schema changes only as ordered SQL migrations in `apps/macos/Sources/AppCore/Migrations/` and test upgrade, rollback/failure, and foreign-key behavior.
+- Add schema changes only as ordered SQL migrations in `Sources/AppCore/Migrations/` and test upgrade, rollback/failure, and foreign-key behavior.
 - SQLite contains host/workspace/session metadata and opaque Keychain identifiers only. No password, private-key bytes, passphrase, token, or transcript.
 - Destructive host, profile, and credential-reference operations require an explicit confirmation that identifies affected records. Do not delete a shared Keychain item while references remain.
 - Keep import/export metadata-only and versioned; never import trust decisions as silently approved.
@@ -84,7 +79,7 @@ Every implementation task names requirement IDs, exact owned paths, test and evi
 
 ## 8. Readiness checklist
 
-- [ ] Native architecture decision ADR-010 is accepted and root guidance points to `apps/macos/`.
+- [ ] Native architecture decision ADR-010 is accepted and root guidance points to the repository root.
 - [ ] Task has US/FR/TC/SEC IDs and an explicit path boundary.
 - [ ] Keychain/auth work proves trust-before-auth and secret-canary absence.
 - [ ] SSH/SFTP integration uses only disposable local fixtures.

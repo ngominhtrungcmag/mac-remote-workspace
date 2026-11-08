@@ -1,12 +1,14 @@
 # ADR-011: Native Embedded RDP Transport and Rendering Engine
 
+> Historical paths below describe the layout at the time. The Swift package now lives at the repository root; sources are grouped by feature under `Sources/`, tests under `Tests/`, and current commands are in [README](../../README.md).
+
 **Status:** Accepted (implementation in progress; helper process isolation implemented, IOSurface frame sharing and real-host verification pending)  
 **Date:** 2026-10-30  
 **Scope:** Architecture and implementation strategy for Native Remote Windows (Embedded RDP)
 
 ## Context
 
-In V1 (P1), Mac Remote Workspace delegated Windows remote desktop access to the external Microsoft Windows App (`com.microsoft.rdc.macos`) using the `rdp://` URI scheme ([ADR-005](file://<home>/sources/github/mac-remote-workspace/docs/13-adr-risks.md#L11), [`RdpLauncher.swift`](file://<home>/sources/github/mac-remote-workspace/apps/macos/Sources/AppCore/RdpLauncher.swift)). While safe and credential-free, this approach forces users to install a third-party application, disrupts multi-session context switching, and breaks the native workspace vision.
+In V1 (P1), Mac Remote Workspace delegated Windows remote desktop access to the external Microsoft Windows App (`com.microsoft.rdc.macos`) using the `rdp://` URI scheme ([ADR-005](../13-adr-risks.md), [`RdpLauncher.swift`](../../Sources/AppCore/RDP/RdpLauncher.swift)). While safe and credential-free, this approach forces users to install a third-party application, disrupts multi-session context switching, and breaks the native workspace vision.
 
 To deliver an integrated, local-first remote workspace experience, the application requires an **Embedded Native RDP Session** (FR-021, US-021, SP-04) that renders directly within an AppKit/SwiftUI workspace tab on macOS without external application dependencies.
 

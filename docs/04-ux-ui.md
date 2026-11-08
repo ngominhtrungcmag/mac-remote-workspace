@@ -1,6 +1,6 @@
 # D04 — UX/UI Design System & Wireframes
 
-> **Active implementation target:** Native SwiftUI/AppKit in `apps/macos/` (ADR-010); no WebView. The shell and wireframes below are design guidance reconciled to the native app: a system sidebar with Workspace (All Hosts, Transfers), Workspaces with nested Groups, and Security destinations, a host detail inspector, and the standard macOS Settings scene (`⌘,`). Tabs, command palette, SFTP dual-pane, and terminal UIs are planned requirements, not implemented native behavior; see `apps/macos/README.md` for the shipped baseline.
+> **Active implementation target:** Native SwiftUI/AppKit in the repository root (ADR-010); no WebView. The shell and wireframes below are design guidance reconciled to the native app: a system sidebar with Workspace (All Hosts, Transfers), Workspaces with nested Groups, and Security destinations, a host detail inspector, and the standard macOS Settings scene (`⌘,`). Tabs, command palette, SFTP dual-pane, and terminal UIs are planned requirements, not implemented native behavior; see `README.md` for the shipped baseline.
 
 ## 1. UX principles
 

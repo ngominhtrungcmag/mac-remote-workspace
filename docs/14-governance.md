@@ -1,6 +1,6 @@
 # D14 — Open Source Governance, License and Community Plan
 
-> **Active implementation target:** Native Swift in `apps/macos/` (ADR-010). The native package currently has no third-party dependencies and delegates SSH/SFTP to maintained macOS system services (OpenSSH client, Keychain, SQLite via system framework). Third-party acknowledgments apply only to dependencies actually bundled in a shipped release (for example, FreeRDP only if embedded RDP passes its P2 feasibility gate). Historical prototype acknowledgments for xterm.js and Rust crates do not apply to the native app; keep notice inventory accurate per release from the app's binary dependencies.
+> **Active implementation target:** Native Swift in the repository root (ADR-010). The native package currently has no third-party dependencies and delegates SSH/SFTP to maintained macOS system services (OpenSSH client, Keychain, SQLite via system framework). Third-party acknowledgments apply only to dependencies actually bundled in a shipped release (for example, FreeRDP only if embedded RDP passes its P2 feasibility gate). Historical prototype acknowledgments for xterm.js and Rust crates do not apply to the native app; keep notice inventory accurate per release from the app's binary dependencies.
 
 ## 1. Licensing recommendation
 
@@ -9,7 +9,7 @@ For a general-purpose desktop utility, **Apache-2.0** is the recommended option 
 - Alternative: MIT is simpler but lacks the same explicit patent formulation.
 - AGPLv3 is an option for deliberate network copyleft objective but may complicate enterprise adoption; assess legal and dependency compatibility first.
 - FreeRDP reports Apache License; check exact versions and bundled native components before distributing embedded RDP engine (P2 only).
-- Third-party acknowledgments required for any bundled native dependencies or external binaries; the current `apps/macos` package has no third-party dependencies, so no xterm.js/Rust-crate acknowledgments carry over from the superseded prototype.
+- Third-party acknowledgments required for any bundled native dependencies or external binaries; the current `repository root` package has no third-party dependencies, so no xterm.js/Rust-crate acknowledgments carry over from the superseded prototype.
 
 ## 2. Repository governance
 

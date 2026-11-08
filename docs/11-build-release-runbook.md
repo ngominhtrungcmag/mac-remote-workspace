@@ -26,14 +26,14 @@ flowchart LR
 ### Local native commands
 
 ```bash
-cd apps/macos
+./scripts/build-freerdp-macos.sh
 swift build
 swift test
 ./run-ssh-fixture.sh
 ./build-native.sh
 ```
 
-The repository's active app is a Swift Package in `apps/macos`. The React/Tauri/Rust build scripts under the old prototype are not release commands. `run-ssh-fixture.sh` starts only disposable loopback OpenSSH services; never point development tests at production hosts.
+The repository's active app is a Swift Package at the repository root. Open `MacRemoteWorkspace.xcodeproj` and run the shared `MacRemoteWorkspace` scheme after building FreeRDP. The scheme has no Test action; run `swift test` separately. Debug builds contain SwiftPM debug information, but Xcode indexing and source breakpoints have not been verified; select a signing team locally if needed. The React/Tauri/Rust build scripts under the old prototype are not release commands. `./run-ssh-fixture.sh` starts only disposable loopback OpenSSH services; never point development tests at production hosts.
 
 ## 3. Signing and notarization
 
@@ -42,14 +42,14 @@ The repository's active app is a Swift Package in `apps/macos`. The React/Tauri/
 - `codesign --verify --deep --strict --verbose=2 /path/MacRemoteWorkspace.app` (verification starting point).
 - Submit through Apple notary service using Xcode or `xcrun notarytool submit ... --wait` with secret profile, then staple using `xcrun stapler staple ...` where applicable.
 - Verify on clean Mac with Gatekeeper enabled (`spctl`, actual Finder launch, app network functions). For sidecar/bundles, inspect code signatures individually.
-- Tooling: `scripts/release-macos.sh [App.app]` (env `DEVELOPER_ID`, `NOTARY_PROFILE`; dry-run when unset) signs nested code including `RdpSessionHelper`, then the bundle, with Hardened Runtime and `scripts/MacRemoteWorkspace.entitlements`, and notarizes/staples. Build the bundle first with `apps/macos/bundle-app.sh`. Status: tooling only, never executed against Apple (no credentials); TC-020 evidence still outstanding.
+- Tooling: `./scripts/release-macos.sh [App.app]` (env `DEVELOPER_ID`, `NOTARY_PROFILE`; dry-run when unset) signs nested code including `RdpSessionHelper`, then the bundle, with Hardened Runtime and `scripts/MacRemoteWorkspace.entitlements`, and notarizes/staples. Build the bundle first with `./bundle-app.sh`. Status: tooling only, never executed against Apple (no credentials); TC-020 evidence still outstanding.
 - macOS App Store is not promised: sandbox and RDP/SSH integration behavior may require a separate design/entitlements strategy.
 
 ## 4. Dependency compliance
 
 Track Swift Package dependencies, native system integrations, and approved RDP clients. Produce an SPDX or CycloneDX SBOM when preparing a release and keep license attributions. FreeRDP is a P2 feasibility candidate only; audit transitive native codecs and optional components before embedding. Run dependency advisory scans and establish a remediation SLA by severity.
 
-Release step (SEC-T08): run `scripts/sbom-macos.sh` (offline) to regenerate `docs/implementation/SBOM.md` from `apps/macos/Package.resolved` and the FreeRDP/OpenSSL pins in `scripts/build-freerdp-macos.sh`, and commit it. Advisory scanning is a **manual** step: check every SBOM entry (SwiftTerm, swift-argument-parser, FreeRDP, OpenSSL and FreeRDP's transitive codecs) against GitHub Security Advisories / NVD / OSV and record the result in the release evidence.
+Release step (SEC-T08): run `./scripts/sbom-macos.sh` (offline) to regenerate `docs/implementation/SBOM.md` from `Package.resolved` and the FreeRDP/OpenSSL pins in `scripts/build-freerdp-macos.sh`, and commit it. Advisory scanning is a **manual** step: check every SBOM entry (SwiftTerm, swift-argument-parser, FreeRDP, OpenSSL and FreeRDP's transitive codecs) against GitHub Security Advisories / NVD / OSV and record the result in the release evidence.
 
 ## 5. Privacy default and support diagnostics
 
@@ -85,4 +85,4 @@ Gate checklist sống ở `checklists/release-gates.md`. Stable release requires
 
 ## Native release artifacts
 
-Build FreeRDP with `scripts/build-freerdp-macos.sh`, then bundle with `apps/macos/bundle-app.sh`. Use `scripts/release-macos.sh` for signing and notarization with the required credentials; CI does not publish releases.
+Build FreeRDP with `./scripts/build-freerdp-macos.sh`, then bundle with `./bundle-app.sh`. Use `./scripts/release-macos.sh` for signing and notarization with the required credentials. On version tags, CI creates or updates a draft GitHub release and uploads ad-hoc-signed artifacts.

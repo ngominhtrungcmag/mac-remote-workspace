@@ -1,5 +1,7 @@
 # ADR-010: Native Swift macOS Application Target
 
+> Historical paths below describe the layout at the time. The Swift package now lives at the repository root; sources are grouped by feature under `Sources/`, tests under `Tests/`, and current commands are in [README](../../README.md).
+
 **Status:** Accepted  
 **Date:** 2026-10-30  
 **Scope:** Product implementation target and active engineering guidance

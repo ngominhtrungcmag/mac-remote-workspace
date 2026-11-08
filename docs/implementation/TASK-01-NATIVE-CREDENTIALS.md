@@ -1,5 +1,7 @@
 # TASK-01 — Native Keychain Credentials and SSH Authentication
 
+> Historical paths below describe the layout at the time. The Swift package now lives at the repository root; sources are grouped by feature under `Sources/`, tests under `Tests/`, and current commands are in [README](../../README.md).
+
 **Status:** Implemented 2026-10-30 (N1 slice). See `apps/macos/README.md` ("Keychain credentials and SSH authentication") for the delivered behavior, limitations, and fixture evidence.  
 **Architecture:** Native Swift only; [ADR-010](../adr/native-swift-target.md).  
 **Baseline:** `apps/macos/README.md` states the current native shell does not read or store credentials and has no password UI. Do not infer credential support from SQLite reference tables or the historical Tauri implementation.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds FreeRDP v3 + OpenSSL 3 (static, from source) into apps/macos/vendor/FreeRDP.xcframework.
+# Builds FreeRDP v3 + OpenSSL 3 (static, from source) into vendor/FreeRDP.xcframework.
 # See docs/adr/embedded-rdp-freerdp.md.
 #
 # Env: ARCHS="arm64 x86_64" (default; override to build a single architecture)
@@ -8,8 +8,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="${REPO_ROOT}/apps/macos/vendor/.build"
-OUTPUT_DIR="${REPO_ROOT}/apps/macos/vendor"
+BUILD_DIR="${REPO_ROOT}/vendor/.build"
+OUTPUT_DIR="${REPO_ROOT}/vendor"
 FREERDP_VERSION="3.10.2"
 FREERDP_COMMIT="ea2a3ee1b6ee622171669df3814aeca70a496c31"
 OPENSSL_VERSION="3.4.1"
@@ -75,9 +75,9 @@ for ARCH in "${ARCHS[@]}"; do
         -DWITH_SIMD=ON -DWITH_NEON=ON \
         -DCHANNEL_PRINTER=OFF -DCHANNEL_SMARTCARD=OFF -DCHANNEL_URBDRC=OFF -DCHANNEL_TSMF=OFF \
         -DCHANNEL_RDPSND=OFF -DCHANNEL_AUDIN=OFF -DCHANNEL_PARALLEL=OFF -DCHANNEL_SERIAL=OFF \
-        -DCHANNEL_DRIVE=OFF -DCHANNEL_RAIL=OFF -DCHANNEL_REMDESK=OFF -DCHANNEL_RDPEI=ON \
+        -DCHANNEL_DRIVE=ON -DCHANNEL_RAIL=OFF -DCHANNEL_REMDESK=OFF -DCHANNEL_RDPEI=ON \
         -DCHANNEL_VIDEO=OFF -DCHANNEL_GEOMETRY=OFF -DCHANNEL_ECHO=OFF -DCHANNEL_LOCATION=OFF \
-        -DCHANNEL_ENCOMSP=OFF -DCHANNEL_SSHAGENT=OFF -DCHANNEL_RDPDR=OFF -DCHANNEL_RDP2TCP=OFF \
+        -DCHANNEL_ENCOMSP=OFF -DCHANNEL_SSHAGENT=OFF -DCHANNEL_RDPDR=ON -DCHANNEL_RDP2TCP=OFF \
         -DCHANNEL_DISP=ON -DCHANNEL_CLIPRDR=ON -DCHANNEL_RDPGFX=ON -DCHANNEL_DRDYNVC=ON
     cmake --build "${BUILD_DIR}/build-${ARCH}" --parallel "${JOBS}"
     # Install via a staging DESTDIR so no build-machine path is baked into the binary.

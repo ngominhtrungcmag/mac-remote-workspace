@@ -1,6 +1,6 @@
 # D12 — Roadmap, Epics, User Stories & Work Breakdown
 
-> **Active implementation target:** Native Swift in `apps/macos/` (ADR-010). Original estimates and prototype-era decisions are planning inputs only. Use `docs/implementation/IMPLEMENTATION_PLAYBOOK.md` for current delivery order and completion status.
+> **Active implementation target:** Native Swift in the repository root (ADR-010). Original estimates and prototype-era decisions are planning inputs only. Use `docs/implementation/IMPLEMENTATION_PLAYBOOK.md` for current delivery order and completion status.
 
 ## 1. Timeline baseline
 
