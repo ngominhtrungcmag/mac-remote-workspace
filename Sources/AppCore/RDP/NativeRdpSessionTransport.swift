@@ -240,7 +240,10 @@ public final class NativeRdpSession: RdpSessionTransport, @unchecked Sendable {
     }
     transition(to: .connecting)
 
-    guard let url = helperURL ?? RdpHelperProcess.defaultHelperURL() else {
+    // Not `a ?? b()`: that expression crashes the Xcode 26.6 type checker (CI runner).
+    var resolvedHelperURL = helperURL
+    if resolvedHelperURL == nil { resolvedHelperURL = RdpHelperProcess.defaultHelperURL() }
+    guard let url = resolvedHelperURL else {
       let error = RdpSessionError.helperProcessFailed("RdpSessionHelper executable not found next to the app.")
       transition(to: .failed(error: error))
       throw error
