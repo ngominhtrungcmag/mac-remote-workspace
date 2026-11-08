@@ -31,7 +31,15 @@ public final class SFTPTransferQueue: ObservableObject {
   private var cancellationBoxes: [UUID: CancellationBox] = [:]
   private var activeTransfers: Set<UUID> = []
 
+  private var idleActions: [@Sendable () -> Void] = []
+
   public init() {}
+
+  /// Runs `work` once no transfer is queued or running (immediately if already idle). Used to release
+  /// session-scoped secrets that queued transfers still need after their browser sheet closed.
+  public func runWhenIdle(_ work: @escaping @Sendable () -> Void) {
+    if hasActiveTransfers { idleActions.append(work) } else { work() }
+  }
 
   public var hasActiveTransfers: Bool {
     items.contains { item in
@@ -274,6 +282,13 @@ public final class SFTPTransferQueue: ObservableObject {
   }
 
   private func updateStatus(id: UUID, status: SFTPTransferStatus) {
+    defer {
+      if !idleActions.isEmpty, !hasActiveTransfers {
+        let actions = idleActions
+        idleActions = []
+        actions.forEach { $0() }
+      }
+    }
     if let idx = items.firstIndex(where: { $0.id == id }) {
       items[idx].status = status
       if case .completed = status {

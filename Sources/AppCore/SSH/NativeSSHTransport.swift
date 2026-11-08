@@ -715,6 +715,23 @@ public final class NativeSSHSession: @unchecked Sendable {
   private func handleTermination(status: Int32) {
     lock.lock()
     self.terminationStatus = status
+    let hasReader = readSource != nil
+    lock.unlock()
+
+    // Drain the PTY to EOF (bounded) so final ssh error lines are not lost; the reader
+    // clears masterFD on EOF/EIO.
+    if hasReader {
+      let deadline = Date().addingTimeInterval(0.5)
+      while Date() < deadline {
+        lock.lock()
+        let drained = masterFD < 0 || isClosed
+        lock.unlock()
+        if drained { break }
+        usleep(10_000)
+      }
+    }
+
+    lock.lock()
     guard !isClosed else {
       lock.unlock()
       return
@@ -1218,8 +1235,11 @@ public final class KeychainAskpassHelper: @unchecked Sendable {
 
   private func deliver(readSecret: @escaping @Sendable () throws -> ProtectedSecret) {
     defer { _ = unlink(fifoURL.path) }
-    let deadline = DispatchTime.now().uptimeNanoseconds + 30_000_000_000
-    while DispatchTime.now().uptimeNanoseconds < deadline {
+    // ssh opens the FIFO only after connect + key exchange (ConnectTimeout=10), so the wait for the reader
+    // gets its own window; the write deadline starts when the reader actually opens. Still one-shot.
+    let openDeadline = DispatchTime.now().uptimeNanoseconds + 60_000_000_000
+    var deadline = openDeadline
+    while DispatchTime.now().uptimeNanoseconds < openDeadline {
       lock.lock()
       let shouldStop = cancelled
       lock.unlock()
@@ -1227,6 +1247,7 @@ public final class KeychainAskpassHelper: @unchecked Sendable {
       let fd = open(fifoURL.path, O_WRONLY | O_NONBLOCK | O_NOFOLLOW)
       if fd >= 0 {
         defer { Darwin.close(fd) }
+        deadline = DispatchTime.now().uptimeNanoseconds + 30_000_000_000
         guard fcntl(fd, F_SETNOSIGPIPE, 1) != -1 else { return }
         lock.lock()
         let shouldStop = cancelled

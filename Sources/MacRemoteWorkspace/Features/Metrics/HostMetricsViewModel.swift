@@ -105,12 +105,16 @@ public final class HostMetricsViewModel: ObservableObject {
 
   public func approveTrustChallengeAndRefresh() {
     guard let challenge = trustChallenge else { return }
-    do {
-      try trustService.approveChallenge(challenge, expectedHost: challenge.host, expectedPort: challenge.port)
-      trustChallenge = nil
-      refresh()
-    } catch {
-      errorMessage = AppLocalization.format("Failed to trust host key: %1$@", error.localizedDescription)
+    Task { [trustService] in  // ssh-keygen runs off the main thread
+      do {
+        try await Task.detached {
+          try trustService.approveChallenge(challenge, expectedHost: challenge.host, expectedPort: challenge.port)
+        }.value
+        trustChallenge = nil
+        refresh()
+      } catch {
+        errorMessage = AppLocalization.format("Failed to trust host key: %1$@", error.localizedDescription)
+      }
     }
   }
 
@@ -118,12 +122,16 @@ public final class HostMetricsViewModel: ObservableObject {
   public func rotateTrustAndRefresh() {
     guard let mismatch = mismatchBlocked else { return }
     let challenge = SSHHostTrustChallenge(host: host.address, port: port, presentedKey: mismatch.presented)
-    do {
-      try trustService.rotateKnownHostKey(challenge, expectedHost: challenge.host, expectedPort: challenge.port)
-      mismatchBlocked = nil
-      refresh()
-    } catch {
-      errorMessage = AppLocalization.format("Failed to rotate host key: %1$@", error.localizedDescription)
+    Task { [trustService] in
+      do {
+        try await Task.detached {
+          try trustService.rotateKnownHostKey(challenge, expectedHost: challenge.host, expectedPort: challenge.port)
+        }.value
+        mismatchBlocked = nil
+        refresh()
+      } catch {
+        errorMessage = AppLocalization.format("Failed to rotate host key: %1$@", error.localizedDescription)
+      }
     }
   }
 

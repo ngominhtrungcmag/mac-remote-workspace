@@ -115,7 +115,9 @@ final class InventoryImportExportTests: XCTestCase {
     let host = try XCTUnwrap(second.listHosts().first)
     XCTAssertEqual(Set(host.tags), Set(["prod", "web"]))
     XCTAssertEqual(Set(host.protocols), Set(["ssh", "rdp"]))
-    XCTAssertEqual(try second.sshConnectionSettings(hostID: host.id), settings)
+    var imported = settings
+    imported.credentialID = nil  // credentials are per-machine and stripped on import
+    XCTAssertEqual(try second.sshConnectionSettings(hostID: host.id), imported)
     XCTAssertEqual(try second.exportedProfiles(hostID: host.id), profiles)
     XCTAssertEqual(try second.exportedSnippets(hostID: host.id, groupID: nil), snippets)
     XCTAssertEqual(try second.exportedSnippets(hostID: nil, groupID: host.groupID), groupSnippets)

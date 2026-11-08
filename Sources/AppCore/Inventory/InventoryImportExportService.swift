@@ -384,7 +384,8 @@ public enum InventoryImportExportService {
         groupName: grpName,
         displayName: host.displayName,
         address: host.address,
-        environment: env, tags: host.tags, profiles: host.profiles, protocols: host.protocols, sshSettings: host.sshSettings, snippets: host.snippets
+        environment: env, tags: host.tags, profiles: host.profiles, protocols: host.protocols, sshSettings: host.sshSettings.map { var s = $0; s.credentialID = nil; return s },  // credential IDs are per-machine
+        snippets: host.snippets
       ))
     }
 

@@ -62,6 +62,12 @@ public final class SFTPBrowserViewModel: ObservableObject {
   @Published public var isShowingNewFolderSheet: Bool = false
 
   private var sftpClient: NativeSFTPClient?
+  /// Bumped on connect/cancel/disconnect so a trust check finishing late cannot (re)connect.
+  private var connectEpoch = 0
+  /// Bumped per listing request and on disconnect so stale listings are dropped.
+  private var listGeneration = 0
+  /// Queue that may still need the ephemeral Keychain secret after `disconnect()`.
+  private weak var transferQueue: SFTPTransferQueue?
   private let trustService: NativeSSHHostTrustService
   private var credentialRepository: SQLiteHostRepository?
   private let passwordAuthService: SSHPasswordAuthenticationServiceProtocol
@@ -135,12 +141,23 @@ public final class SFTPBrowserViewModel: ObservableObject {
   }
 
   public func disconnect() {
+    connectEpoch += 1
+    listGeneration += 1
     isConnected = false
     isConnecting = false
+    isLoadingDirectory = false
     sftpClient = nil
     entries = []
     currentPath = "/"
-    cleanupEphemeralCredential()
+    // Queued transfers still authenticate through the ephemeral Keychain item; keep it until they finish.
+    if let ref = ephemeralHolder.take() {
+      let service = passwordAuthService
+      if let queue = transferQueue {
+        queue.runWhenIdle { service.cleanupEphemeralCredential(ref) }
+      } else {
+        service.cleanupEphemeralCredential(ref)
+      }
+    }
   }
 
   public func loadCredentials() {
@@ -244,6 +261,8 @@ public final class SFTPBrowserViewModel: ObservableObject {
     isConnecting = true
     trustChallenge = nil
     mismatchBlocked = nil
+    connectEpoch += 1
+    let epoch = connectEpoch
 
     let targetHost = host.address
 
@@ -251,6 +270,7 @@ public final class SFTPBrowserViewModel: ObservableObject {
       do {
         let status = try trustService.evaluateEndpoint(host: targetHost, port: targetPort)
         await MainActor.run {
+          guard epoch == self.connectEpoch else { return }
           switch status {
           case .trusted:
             self.proceedWithSFTPConnection()
@@ -264,6 +284,7 @@ public final class SFTPBrowserViewModel: ObservableObject {
         }
       } catch {
         await MainActor.run {
+          guard epoch == self.connectEpoch else { return }
           self.isConnecting = false
           self.errorMessage = error.localizedDescription
         }
@@ -274,11 +295,13 @@ public final class SFTPBrowserViewModel: ObservableObject {
   public func approveTrustChallengeAndConnect() {
     guard let challenge = trustChallenge else { return }
     isConnecting = true
+    let epoch = connectEpoch
 
     Task.detached(priority: .userInitiated) { [trustService] in
       do {
         try trustService.approveChallenge(challenge, expectedHost: challenge.host, expectedPort: challenge.port)
         await MainActor.run {
+          guard epoch == self.connectEpoch else { return }
           self.trustChallenge = nil
           self.proceedWithSFTPConnection()
         }
@@ -296,10 +319,12 @@ public final class SFTPBrowserViewModel: ObservableObject {
     guard let mismatch = mismatchBlocked else { return }
     let challenge = SSHHostTrustChallenge(host: host.address, port: port, presentedKey: mismatch.presented)
     isConnecting = true
+    let epoch = connectEpoch
     Task.detached(priority: .userInitiated) { [trustService] in
       do {
         try trustService.rotateKnownHostKey(challenge, expectedHost: challenge.host, expectedPort: challenge.port)
         await MainActor.run {
+          guard epoch == self.connectEpoch else { return }
           self.mismatchBlocked = nil
           self.proceedWithSFTPConnection()
         }
@@ -313,6 +338,7 @@ public final class SFTPBrowserViewModel: ObservableObject {
   }
 
   public func cancelTrust() {
+    connectEpoch += 1
     trustChallenge = nil
     isConnecting = false
   }
@@ -413,11 +439,14 @@ public final class SFTPBrowserViewModel: ObservableObject {
     guard let client = sftpClient else { return }
     isLoadingDirectory = true
     errorMessage = nil
+    listGeneration += 1
+    let generation = listGeneration
 
     Task.detached(priority: .userInitiated) {
       do {
         let loaded = try client.listDirectory(at: path)
         await MainActor.run {
+          guard generation == self.listGeneration, self.isConnected else { return }
           self.currentPath = path
           self.entries = loaded
           self.isLoadingDirectory = false
@@ -425,6 +454,7 @@ public final class SFTPBrowserViewModel: ObservableObject {
         }
       } catch {
         await MainActor.run {
+          guard generation == self.listGeneration, self.isConnected else { return }
           self.isLoadingDirectory = false
           self.errorMessage = error.localizedDescription
           if self.entries.isEmpty && path == "/" {
@@ -545,12 +575,14 @@ public final class SFTPBrowserViewModel: ObservableObject {
 
   public func upload(localURL: URL, queue: SFTPTransferQueue) {
     guard let client = sftpClient else { return }
+    transferQueue = queue
     let remoteTarget = currentPath == "/" ? "/\(localURL.lastPathComponent)" : "\(currentPath)/\(localURL.lastPathComponent)"
     _ = queue.enqueueUpload(client: client, localURL: localURL, remotePath: remoteTarget, overwrite: false)
   }
 
   public func download(entry: SFTPFileEntry, localDirectoryURL: URL, queue: SFTPTransferQueue) {
     guard let client = sftpClient else { return }
+    transferQueue = queue
     _ = queue.enqueueDownload(
       client: client,
       remotePath: entry.path,
