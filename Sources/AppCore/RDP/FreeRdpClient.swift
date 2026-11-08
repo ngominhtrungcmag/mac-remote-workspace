@@ -86,9 +86,9 @@ public enum RdpPointerFlags {
     case 0x09: return 0x8000 | 0x4000  // middle down
     case 0x0A: return 0x4000  // middle up
     case 0x10: return 0x0200 | 0x0078  // wheel up
-    case 0x20: return 0x0200 | 0x0100 | 0x0078  // wheel down
+    case 0x20: return 0x0200 | 0x0100 | 0x0088  // wheel down
     case 0x40: return 0x0400 | 0x0078  // horizontal wheel right
-    case 0x80: return 0x0400 | 0x0100 | 0x0078  // horizontal wheel left
+    case 0x80: return 0x0400 | 0x0100 | 0x0088  // horizontal wheel left
     default: return 0x0800  // move
     }
   }
@@ -261,14 +261,11 @@ final class FreeRdpClient: @unchecked Sendable {
       return ObjCBool(c.postConnect(i))
     }
     inst.pointee.PostDisconnect = { if let i = $0 { gdi_free(i) } }
-    inst.pointee.VerifyCertificateEx = { inst, _, _, commonName, subject, issuer, fp, flags in
-      guard let inst, let c = FreeRdpClient.client(for: inst) else { return 0 }
-      return c.verify(
-        inst, commonName: commonName, subject: subject, issuer: issuer,
-        fingerprint: fp, flags: flags)
-    }
-    inst.pointee.VerifyChangedCertificateEx = { _, _, _, _, _, _, _, _, _, _, _ in
-      0  // changed certificate (per FreeRDP's own store) is a hard reject; we never store there
+    // App-managed trust: tls.c calls this for every handshake (CA-signed or not) and never
+    // consults FreeRDP's own stores when ExternalCertificateManagement is set.
+    inst.pointee.VerifyX509Certificate = { inst, data, length, _, _, flags in
+      guard let inst, let c = FreeRdpClient.client(for: inst), let data else { return 0 }
+      return Int32(c.verify(inst, pem: Data(bytes: data, count: length), flags: flags))
     }
 
     guard freerdp_context_new(inst), let context = inst.pointee.context else {
@@ -282,7 +279,13 @@ final class FreeRdpClient: @unchecked Sendable {
 
     var lastError: UInt32 = 0
     var message = ""
-    if configure(inst), freerdp_connect(inst) {
+    // Private config dir: FreeRDP's own ~/.config/freerdp known_hosts is never consulted.
+    let configDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("mrw-rdp-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(
+      at: configDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    defer { try? FileManager.default.removeItem(at: configDir) }
+    if configure(inst, configPath: configDir.path), freerdp_connect(inst) {
       ioLock.lock()
       connected = true
       ioLock.unlock()
@@ -315,7 +318,7 @@ final class FreeRdpClient: @unchecked Sendable {
     callbacks.onEnded(lastError, message, wasConnected)
   }
 
-  private func configure(_ inst: UnsafeMutablePointer<freerdp>) -> Bool {
+  private func configure(_ inst: UnsafeMutablePointer<freerdp>, configPath: String) -> Bool {
     guard let s = inst.pointee.context?.pointee.settings else { return false }
     var ok = freerdp_settings_set_string(s, FreeRDP_ServerHostname, host)
     ok = freerdp_settings_set_uint32(s, FreeRDP_ServerPort, UInt32(port)) && ok
@@ -330,6 +333,8 @@ final class FreeRdpClient: @unchecked Sendable {
     ok = freerdp_settings_set_bool(s, FreeRDP_IgnoreCertificate, false) && ok
     ok = freerdp_settings_set_bool(s, FreeRDP_AutoAcceptCertificate, false) && ok
     ok = freerdp_settings_set_bool(s, FreeRDP_AutoDenyCertificate, false) && ok
+    ok = freerdp_settings_set_bool(s, FreeRDP_ExternalCertificateManagement, true) && ok
+    ok = freerdp_settings_set_string(s, FreeRDP_ConfigPath, configPath) && ok
     ok = Self.configureDeviceRedirection(s, sharedFolder: sharedFolder) && ok
     // Text and file clipboard use cliprdr.
     ok = freerdp_settings_set_bool(s, FreeRDP_RedirectClipboard, true) && ok
@@ -442,6 +447,13 @@ final class FreeRdpClient: @unchecked Sendable {
       client.emitFrame(ctx)
       return ObjCBool(true)
     }
+    update.pointee.DesktopResize = { ctx in
+      guard let ctx, let settings = ctx.pointee.settings, let gdi = ctx.pointee.gdi else { return ObjCBool(false) }
+      let ok = gdi_resize(
+        gdi, freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth),
+        freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight))
+      return ObjCBool(ok)
+    }
     return true
   }
 
@@ -462,20 +474,12 @@ final class FreeRdpClient: @unchecked Sendable {
   }
 
   /// Returns 2 (accept for this session only; FreeRDP must not persist) or 0 (reject).
-  private func verify(
-    _ inst: UnsafeMutablePointer<freerdp>, commonName: UnsafePointer<CChar>?,
-    subject: UnsafePointer<CChar>?, issuer: UnsafePointer<CChar>?,
-    fingerprint: UnsafePointer<CChar>?, flags: DWORD
-  ) -> DWORD {
-    guard let fingerprint,
-      let hex = RdpCertificateFingerprint.fingerprint(
-        from: String(cString: fingerprint), isPEM: flags & DWORD(VERIFY_CERT_FLAG_FP_IS_PEM) != 0)
+  private func verify(_ inst: UnsafeMutablePointer<freerdp>, pem: Data, flags: DWORD) -> DWORD {
+    guard let text = String(data: pem, encoding: .utf8),
+      let hex = RdpCertificateFingerprint.fingerprint(from: text, isPEM: true)
     else { return 0 }
-    let subj = subject.map { String(cString: $0) } ?? ""
-    let record = RdpCertificateRecord(
-      host: host, port: port, sha256Fingerprint: hex,
-      subjectCN: commonName.map { String(cString: $0) } ?? subj,
-      issuerCN: issuer.map { String(cString: $0) } ?? "")
+    // VerifyX509Certificate carries only PEM; CN/issuer are informational and not available here.
+    let record = RdpCertificateRecord(host: host, port: port, sha256Fingerprint: hex, subjectCN: host, issuerCN: "")
     let changed = Self.isChangedCertificate(flags: flags)
     guard let decision = callbacks.verifyCertificate(record, changed),
       let s = inst.pointee.context?.pointee.settings

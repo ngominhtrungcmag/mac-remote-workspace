@@ -216,6 +216,11 @@ public final class RdpMetalHostingView: NSView {
   }
 
   public override func flagsChanged(with event: NSEvent) {
+    if event.keyCode == 0x39, let down = RdpScancodeMapper.mapMacKeyCode(0x39) {
+      onKeyEvent?(down)
+      onKeyEvent?(RdpKeyboardEvent(scancode: down.scancode, isExtended: down.isExtended, isKeyUp: true))
+      return
+    }
     guard [0x37, 0x36, 0x38, 0x3C, 0x3A, 0x3D, 0x3B, 0x3E].contains(event.keyCode) else {
       super.flagsChanged(with: event)
       return

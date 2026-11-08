@@ -90,9 +90,9 @@ final class RdpSessionTransportTests: XCTestCase {
     XCTAssertEqual(RdpPointerFlags.rdpFlags(forButtonFlags: 0x0A), 0x4000)
     XCTAssertEqual(RdpPointerFlags.rdpFlags(forButtonFlags: 0x00), 0x0800)
     XCTAssertEqual(RdpPointerFlags.rdpFlags(forButtonFlags: 0x10), 0x0278)
-    XCTAssertEqual(RdpPointerFlags.rdpFlags(forButtonFlags: 0x20), 0x0378)
+    XCTAssertEqual(RdpPointerFlags.rdpFlags(forButtonFlags: 0x20), 0x0388)
     XCTAssertEqual(RdpPointerFlags.rdpFlags(forButtonFlags: 0x40), 0x0478)
-    XCTAssertEqual(RdpPointerFlags.rdpFlags(forButtonFlags: 0x80), 0x0578)
+    XCTAssertEqual(RdpPointerFlags.rdpFlags(forButtonFlags: 0x80), 0x0588)
     XCTAssertEqual(mapFreeRdpError(code: 0x0002_0015, message: "m").1, .authenticationFailed)
     XCTAssertEqual(mapFreeRdpError(code: 0x0002_0004, message: "m").0, .dnsResolutionFailed("m"))
   }
