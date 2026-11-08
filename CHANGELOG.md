@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.1 — 2026-11-08
+
+- FreeRDP 3.33.0: fixes RDP failing on Macs with long hostnames, plus upstream security fixes.
+- RDP fixes: app-managed certificate trust on every handshake, desktop resize, stuck Ctrl after Cmd shortcuts, close-during-connect race, wheel delta, Caps Lock.
+- SSH/SFTP fixes: multi-key host trust, auth-failure backoff, final error output, symlinked `~/.ssh`, askpass timing, SFTP password lifetime with queued transfers, stale listings, metrics off the main thread, import strips credential IDs.
+- Build: Xcode 27 required; CI runs on the xcode-27 runner.
+
 ## 1.0.0 — 2026-11-08
 
 - Native macOS host inventory, SSH terminal tabs, strict host trust and Keychain credentials.

@@ -4,7 +4,7 @@ Mac Remote Workspace uses the following open-source software. License texts belo
 
 - SwiftTerm 1.5.0 (MIT) — https://github.com/migueldeicaza/SwiftTerm
 - swift-argument-parser 1.8.2 (Apache-2.0; SwiftTerm dependency) — https://github.com/apple/swift-argument-parser
-- FreeRDP and WinPR 3.10.2 (Apache-2.0; the release ships no NOTICE file) — https://github.com/FreeRDP/FreeRDP
+- FreeRDP and WinPR 3.33.0 (Apache-2.0; the release ships no NOTICE file) — https://github.com/FreeRDP/FreeRDP
 - OpenSSL 3.4.1 (Apache-2.0) — https://github.com/openssl/openssl
 - zlib (zlib License): system library provided by macOS, not bundled or built by this project. Its license text is not included here; see https://zlib.net/zlib_license.html.
 
@@ -258,7 +258,7 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ---
 
-## FreeRDP and WinPR 3.10.2 (Apache-2.0)
+## FreeRDP and WinPR 3.33.0 (Apache-2.0)
 
 ```text
 

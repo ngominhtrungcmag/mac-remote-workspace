@@ -51,7 +51,7 @@ Review date: 2026-11-02 (baseline written at commit 930979b). Basis: source and 
 | SEC-T05 transfer temp/rename | partial | Commit/collision tests; interrupted 200 MB upload/download tests (SFTPLargeTransferTests, fixture); TOCTOU limitation not disclosed in UI |
 | SEC-T06 RDP no secret argv | partial | See gate 3 |
 | SEC-T07 local DB | partial | 0600 file permission test (`testDatabaseFilePermissionsAreRestricted`) plus canary scan; backup also 0600 in code |
-| SEC-T08 supply chain | partial | `scripts/sbom-macos.sh` (offline) generates `docs/implementation/SBOM.md` from the tracked `apps/macos/Package.resolved` (SwiftTerm 1.5.0, swift-argument-parser 1.8.2) plus FreeRDP 3.10.2 and OpenSSL 3.4.1 pins; the release runbook has the step. Open: script has no test; FreeRDP/OpenSSL licenses marked "verify"; FreeRDP transitive codecs not enumerated; advisory scan is manual with no recorded result; no SPDX/CycloneDX output |
+| SEC-T08 supply chain | partial | `scripts/sbom-macos.sh` (offline) generates `docs/implementation/SBOM.md` from the tracked `apps/macos/Package.resolved` (SwiftTerm 1.5.0, swift-argument-parser 1.8.2) plus FreeRDP 3.33.0 and OpenSSL 3.4.1 pins; the release runbook has the step. Open: script has no test; FreeRDP/OpenSSL licenses marked "verify"; FreeRDP transitive codecs not enumerated; advisory scan is manual with no recorded result; no SPDX/CycloneDX output |
 | SEC-T09 terminal escapes/links | partial | See gate 5 and FR-026: URL allowlist verified, delegate wiring untested |
 | SEC-T10 tunnel loopback | verified | `testLocalTunnelValidationAndArgumentsAreLoopbackOnly`, echo/teardown test |
 | Section 8 privacy: no telemetry | verified by review | No network code outside SSH/RDP; not tested |

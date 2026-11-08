@@ -389,7 +389,7 @@ final class FreeRdpClient: @unchecked Sendable {
     let device = RdpSharedFolder.driveName(for: sharedFolder).withCString { name in
       sharedFolder.path.withCString { path in
         var args: [UnsafePointer<CChar>?] = [name, path]
-        return freerdp_device_new(UInt32(RDPDR_DTYP_FILESYSTEM), args.count, &args)
+        return freerdp_device_new(RDPDR_DTYP_FILESYSTEM.rawValue, args.count, &args)
       }
     }
     guard let device else { return false }

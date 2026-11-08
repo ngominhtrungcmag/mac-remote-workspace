@@ -18,8 +18,6 @@ jobs:
           key: freerdp-${{ runner.os }}-${{ hashFiles('scripts/build-freerdp-macos.sh') }}
       - if: steps.freerdp.outputs.cache-hit != 'true'
         run: ./scripts/build-freerdp-macos.sh
-      # FreeRDP 3.10.2 GetComputerNameA rejects hostnames of 31+ chars (runner names are longer).
-      - run: sudo scutil --set HostName mrw-ci && hostname
       - run: swift test
       - run: ./bundle-app.sh
       # ponytail: ad-hoc signed only; Developer ID signing + notarization run locally via scripts/release-macos.sh.
