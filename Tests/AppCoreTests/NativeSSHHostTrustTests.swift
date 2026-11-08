@@ -148,6 +148,7 @@ final class NativeSSHHostTrustTests: XCTestCase {
   func testApproveChallengeAppendsSafelyAndRechecksMismatch() throws {
     let knownHostsURL = tempDirectory.appendingPathComponent("known_hosts")
     let service = NativeSSHHostTrustService(knownHostsFileURL: knownHostsURL)
+    let directoryPermissions = try FileManager.default.attributesOfItem(atPath: tempDirectory.path)[.posixPermissions] as? Int
 
     let keyRecord = SSHHostKeyRecord(
       rawLine: "127.0.0.1 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBw4ONu6jpEcSxnYb0tUI3tpRYIW8gGvrYcg1Ps1dyUj",
@@ -170,7 +171,8 @@ final class NativeSSHHostTrustTests: XCTestCase {
     let saved = try String(contentsOf: knownHostsURL, encoding: .utf8)
     XCTAssertTrue(saved.contains("127.0.0.1 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBw4ONu6jpEcSxnYb0tUI3tpRYIW8gGvrYcg1Ps1dyUj"))
     XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: knownHostsURL.path)[.posixPermissions] as? Int, 0o600)
-    XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: tempDirectory.path)[.posixPermissions] as? Int, 0o700)
+    // Pre-existing directory permissions are left untouched.
+    XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: tempDirectory.path)[.posixPermissions] as? Int, directoryPermissions)
 
     // Negative: Mismatched target parameters must be rejected
     XCTAssertThrowsError(try service.approveChallenge(challenge, expectedHost: "10.0.0.1", expectedPort: 22))
