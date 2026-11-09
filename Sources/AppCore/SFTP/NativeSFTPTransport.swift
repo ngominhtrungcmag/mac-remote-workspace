@@ -155,6 +155,28 @@ final class SFTPOutputCollector: @unchecked Sendable {
   }
 }
 
+final class SFTPIdleBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var tracker: SFTPIdleTracker
+
+  init(now: UInt64) {
+    self.tracker = SFTPIdleTracker(now: now)
+  }
+
+  @discardableResult
+  func observe(size: Int64, now: UInt64) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return tracker.observe(size: size, now: now)
+  }
+
+  func hasTimedOut(now: UInt64, seconds: TimeInterval) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return tracker.hasTimedOut(now: now, seconds: seconds)
+  }
+}
+
 struct SFTPIdleTracker {
   private(set) var lastSize: Int64 = 0
   private var lastChange: UInt64
@@ -173,18 +195,164 @@ struct SFTPIdleTracker {
   }
 }
 
+/// Bounded streaming parser for OpenSSH `/usr/bin/sftp -vvv` stderr during `put`:
+/// counts successful acknowledged upload bytes (`In write loop, ack for <id> <len> bytes at <offset>`)
+/// while discarding verbose diagnostic lines so neither secrets/paths nor multi-gigabyte debug logs are retained.
+final class SFTPUploadDiagnosticStream: @unchecked Sendable {
+  private static let maxLineBytes = 4096
+  private static let ackMarker = "In write loop, ack for "
+
+  private let lock = NSLock()
+  private var lineBuffer = Data()
+  private var discardingOversizedLine = false
+  private(set) var acknowledgedBytes: Int64 = 0
+  private var previousLineWasSuccessfulStatus = false
+
+  func consume(
+    _ chunk: Data,
+    into collector: SFTPOutputCollector,
+    onAcknowledgedBytes: (Int64) -> Void = { _ in }
+  ) {
+    for byte in chunk {
+      if byte == 0x0A {
+        let completedLine: Data? = {
+          lock.lock()
+          defer {
+            lineBuffer.removeAll(keepingCapacity: true)
+            discardingOversizedLine = false
+            lock.unlock()
+          }
+          return discardingOversizedLine ? nil : lineBuffer
+        }()
+        if let completedLine {
+          processLine(completedLine, into: collector, onAcknowledgedBytes: onAcknowledgedBytes)
+        }
+      } else if byte != 0x0D {
+        lock.lock()
+        if !discardingOversizedLine {
+          if lineBuffer.count < Self.maxLineBytes {
+            lineBuffer.append(byte)
+          } else {
+            lineBuffer.removeAll(keepingCapacity: true)
+            discardingOversizedLine = true
+          }
+        }
+        lock.unlock()
+      }
+    }
+  }
+
+  func finish(
+    into collector: SFTPOutputCollector,
+    onAcknowledgedBytes: (Int64) -> Void = { _ in }
+  ) {
+    let trailingLine: Data? = {
+      lock.lock()
+      defer {
+        lineBuffer.removeAll(keepingCapacity: true)
+        discardingOversizedLine = false
+        lock.unlock()
+      }
+      return (!discardingOversizedLine && !lineBuffer.isEmpty) ? lineBuffer : nil
+    }()
+    if let trailingLine {
+      processLine(trailingLine, into: collector, onAcknowledgedBytes: onAcknowledgedBytes)
+    }
+  }
+
+  private func processLine(
+    _ lineData: Data,
+    into collector: SFTPOutputCollector,
+    onAcknowledgedBytes: (Int64) -> Void
+  ) {
+    guard let line = String(data: lineData, encoding: .utf8) else { return }
+    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+    let successfulStatus = previousLineWasSuccessfulStatus
+    previousLineWasSuccessfulStatus = trimmed == "debug3: SSH2_FXP_STATUS 0"
+    if successfulStatus, let length = Self.parseWriteAckLength(trimmed) {
+      let (total, overflow) = acknowledgedBytes.addingReportingOverflow(length)
+      guard !overflow else { return }
+      acknowledgedBytes = total
+      onAcknowledgedBytes(total)
+    }
+    // Upload diagnostics are never returned to callers, including unprefixed SSH messages.
+  }
+
+  static func parseWriteAckLength(_ line: String) -> Int64? {
+    guard line.hasPrefix("debug3:") else { return nil }
+    guard let markerRange = line.range(of: ackMarker) else { return nil }
+    let remainder = line[markerRange.upperBound...]
+    let parts = remainder.split(whereSeparator: \.isWhitespace)
+    // Expected tokens: <id> <len> "bytes" "at" <offset>
+    guard parts.count == 5,
+          parts[2] == "bytes",
+          parts[3] == "at",
+          UInt64(parts[0]) != nil,
+          let length = Int64(parts[1]), length > 0,
+          let offset = Int64(parts[4]), offset >= 0 else {
+      return nil
+    }
+    let (_, overflow) = offset.addingReportingOverflow(length)
+    return overflow ? nil : length
+  }
+}
+
+/// POSIX read returns available bytes immediately; FileHandle.readData(ofLength:) waits to fill the buffer.
+final class SFTPNonblockingPipe {
+  private let descriptor: Int32
+  private var bytes = [UInt8](repeating: 0, count: 65536)
+  private(set) var reachedEOF = false
+
+  init(_ handle: FileHandle) throws {
+    descriptor = handle.fileDescriptor
+    let flags = fcntl(descriptor, F_GETFL)
+    guard flags >= 0, fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) >= 0 else {
+      throw POSIXError(.EIO)
+    }
+  }
+
+  func read() throws -> Data? {
+    guard !reachedEOF else { return nil }
+    let count = Darwin.read(descriptor, &bytes, bytes.count)
+    if count > 0 { return Data(bytes.prefix(count)) }
+    if count == 0 { reachedEOF = true; return nil }
+    if errno == EAGAIN || errno == EINTR { return nil }
+    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+  }
+}
+
+enum SFTPProcessTeardown {
+  static func stop(_ process: Process) -> Bool {
+    let group = process.processIdentifier
+    // The caller verifies group ownership immediately after launch.
+    _ = kill(-group, SIGTERM)
+    let deadline = DispatchTime.now().uptimeNanoseconds + 500_000_000
+    while process.isRunning && DispatchTime.now().uptimeNanoseconds < deadline { usleep(5_000) }
+    _ = kill(-group, SIGKILL)
+    let killDeadline = DispatchTime.now().uptimeNanoseconds + 500_000_000
+    while process.isRunning && DispatchTime.now().uptimeNanoseconds < killDeadline { usleep(5_000) }
+    return !process.isRunning
+  }
+}
+
 // MARK: - Native SFTP Client
 
 /// Thread-safe client performing native SFTP operations over OpenSSH's `/usr/bin/sftp` in batch mode.
 public final class NativeSFTPClient: Sendable {
   public let configuration: NativeSSHConfiguration
+  let uploadIdleTimeoutSeconds: TimeInterval
 
-  public init(configuration: NativeSSHConfiguration) throws {
+  public convenience init(configuration: NativeSSHConfiguration) throws {
+    try self.init(configuration: configuration, uploadIdleTimeoutSeconds: 300)
+  }
+
+  init(configuration: NativeSSHConfiguration, uploadIdleTimeoutSeconds: TimeInterval) throws {
     try NativeSSHSession.validate(configuration: configuration)
     guard configuration.proxyJump == nil else {
       throw SFTPError.connectionFailed(AppCoreLocalization.string("ProxyJump is not supported for SFTP."))
     }
     self.configuration = configuration
+    self.uploadIdleTimeoutSeconds = max(0.05, uploadIdleTimeoutSeconds)
   }
 
   // MARK: - Path Validation & Sanitization
@@ -241,18 +409,23 @@ public final class NativeSFTPClient: Sendable {
     _ commands: [String],
     timeoutSeconds: TimeInterval? = 30,
     progressFile: URL? = nil,
+    trackUploadAckProgress: Bool = false,
     onProgress: @escaping @Sendable (Int64) -> Void = { _ in },
     isCancelled: @escaping @Sendable () -> Bool = { false }
   ) throws -> (exitCode: Int32, stdout: String, stderr: String) {
     guard !isCancelled() else { throw SFTPError.cancelled }
 
-    var args: [String] = [
+    var args: [String] = []
+    if trackUploadAckProgress {
+      args.append("-vvv")
+    }
+    args.append(contentsOf: [
       "-F", "/dev/null",
       "-o", "GlobalKnownHostsFile=/dev/null",
       "-o", "StrictHostKeyChecking=yes",
       "-o", "UserKnownHostsFile=\(configuration.knownHostsFileURL.path)",
       "-P", String(configuration.port),
-    ]
+    ])
 
     var env: [String: String] = [
       "PATH": "/usr/bin:/bin", "LC_ALL": "C", "HOME": NSHomeDirectory(),
@@ -319,73 +492,66 @@ public final class NativeSFTPClient: Sendable {
     process.standardError = stderrPipe
 
     try process.run()
-
-    // Write batch commands into stdin
-    let batchScript = commands.joined(separator: "\n") + "\nquit\n"
-    if let data = batchScript.data(using: .utf8) {
-      stdinPipe.fileHandleForWriting.write(data)
+    defer {
+      try? stdinPipe.fileHandleForWriting.close()
+      try? stdoutPipe.fileHandleForReading.close()
+      try? stderrPipe.fileHandleForReading.close()
     }
-    stdinPipe.fileHandleForWriting.closeFile()
+    // Foundation launches a separate process group on macOS; fail closed if that changes.
+    guard getpgid(process.processIdentifier) == process.processIdentifier else {
+      process.terminate()
+      throw SFTPError.connectionFailed("SFTP subprocess has no isolated process group.")
+    }
+    defer { _ = SFTPProcessTeardown.stop(process) }
 
-    // Asynchronously drain stdout and stderr to prevent deadlocks
+    let batchScript = commands.joined(separator: "\n") + "\nquit\n"
+    try stdinPipe.fileHandleForWriting.write(contentsOf: Data(batchScript.utf8))
+    try stdinPipe.fileHandleForWriting.close()
+
     let outCollector = SFTPOutputCollector(limit: 4 * 1024 * 1024)
     let errCollector = SFTPOutputCollector(limit: 4 * 1024 * 1024)
-    let group = DispatchGroup()
+    let idle = SFTPIdleBox(now: DispatchTime.now().uptimeNanoseconds)
+    let diagnostics = SFTPUploadDiagnosticStream()
+    let output = try SFTPNonblockingPipe(stdoutPipe.fileHandleForReading)
+    let errors = try SFTPNonblockingPipe(stderrPipe.fileHandleForReading)
+    var drainDeadline: UInt64?
 
-    group.enter()
-    DispatchQueue.global(qos: .userInitiated).async {
-      while true {
-        let chunk = stdoutPipe.fileHandleForReading.readData(ofLength: 65536)
-        if chunk.isEmpty { break }
-        outCollector.append(chunk)
+    while true {
+      if let chunk = try output.read(), !trackUploadAckProgress { outCollector.append(chunk) }
+      if let chunk = try errors.read() {
+        if trackUploadAckProgress {
+          diagnostics.consume(chunk, into: errCollector) { acknowledged in
+            if idle.observe(size: acknowledged, now: DispatchTime.now().uptimeNanoseconds) {
+              onProgress(acknowledged)
+            }
+          }
+        } else {
+          errCollector.append(chunk)
+        }
       }
-      group.leave()
-    }
-
-    group.enter()
-    DispatchQueue.global(qos: .userInitiated).async {
-      while true {
-        let chunk = stderrPipe.fileHandleForReading.readData(ofLength: 65536)
-        if chunk.isEmpty { break }
-        errCollector.append(chunk)
-      }
-      group.leave()
-    }
-
-    // Monitor cancellation or timeout
-    var idle = SFTPIdleTracker(now: DispatchTime.now().uptimeNanoseconds)
-    while process.isRunning {
       if let progressFile,
         let size = (try? FileManager.default.attributesOfItem(atPath: progressFile.path)[.size] as? NSNumber)?.int64Value,
         idle.observe(size: size, now: DispatchTime.now().uptimeNanoseconds) {
         onProgress(size)
       }
       if outCollector.didExceedLimit || errCollector.didExceedLimit {
-        process.terminate()
-        _ = kill(process.processIdentifier, SIGKILL)
-        group.wait()
-        _ = askpassHelper
         throw SFTPError.remoteError("SFTP output exceeded the 4 MiB limit.")
       }
-      if isCancelled() {
-        process.terminate()
-        _ = kill(process.processIdentifier, SIGKILL)
-        group.wait()
-        _ = askpassHelper // keep alive until process terminates
-        throw SFTPError.cancelled
+      if isCancelled() { throw SFTPError.cancelled }
+      let now = DispatchTime.now().uptimeNanoseconds
+      if !process.isRunning {
+        if output.reachedEOF && errors.reachedEOF { break }
+        // A descendant retaining a pipe must never keep the caller waiting indefinitely.
+        if drainDeadline == nil { drainDeadline = now + 1_000_000_000 }
+        if now >= drainDeadline! {
+          throw SFTPError.remoteError("SFTP subprocess output did not close.")
+        }
+      } else if let timeoutSeconds, idle.hasTimedOut(now: now, seconds: timeoutSeconds) {
+        throw SFTPError.remoteError("SFTP subprocess timed out after \(Int(ceil(timeoutSeconds))) seconds.")
       }
-      if let timeoutSeconds, idle.hasTimedOut(now: DispatchTime.now().uptimeNanoseconds, seconds: timeoutSeconds) {
-        process.terminate()
-        _ = kill(process.processIdentifier, SIGKILL)
-        group.wait()
-        _ = askpassHelper
-        throw SFTPError.remoteError("SFTP subprocess timed out after \(Int(timeoutSeconds)) seconds.")
-      }
-      usleep(20_000)
+      usleep(5_000)
     }
-
-    process.waitUntilExit()
-    group.wait()
+    diagnostics.finish(into: errCollector) { acknowledged in onProgress(acknowledged) }
     _ = askpassHelper
 
     guard !outCollector.didExceedLimit, !errCollector.didExceedLimit else {
@@ -626,8 +792,13 @@ public final class NativeSFTPClient: Sendable {
 
     onProgress(0, 0)
     do {
-      let res = try executeBatchCommands(["put \(quotedLocal) \(quotedStaging)"],
-        timeoutSeconds: nil, isCancelled: isCancelled)
+      let res = try executeBatchCommands(
+        ["put \(quotedLocal) \(quotedStaging)"],
+        timeoutSeconds: uploadIdleTimeoutSeconds,
+        trackUploadAckProgress: true,
+        onProgress: { onProgress($0, 0) },
+        isCancelled: isCancelled
+      )
       if res.exitCode != 0 {
         let err = res.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
         throw SFTPError.remoteError(err.isEmpty ? "Upload failed." : err)
@@ -643,10 +814,10 @@ public final class NativeSFTPClient: Sendable {
           ? (err.isEmpty ? "Upload failed." : err)
           : "Upload could not safely create the destination; it may already exist or the server may not support hard links. \(err)")
       }
-      if !overwrite { _ = try? executeBatchCommands(["-rm \(quotedStaging)"]) }
+      if !overwrite { _ = try? executeBatchCommands(["-rm \(quotedStaging)"], timeoutSeconds: 2) }
     } catch {
       // Clean up staging file on cancellation or failure
-      _ = try? executeBatchCommands(["-rm \(quotedStaging)"])
+      _ = try? executeBatchCommands(["-rm \(quotedStaging)"], timeoutSeconds: 2)
       throw error
     }
   }

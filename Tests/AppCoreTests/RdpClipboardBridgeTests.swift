@@ -90,6 +90,16 @@ private final class ClipboardBridgeHarness {
       _ = context.pointee.ServerFormatDataResponse?(context, &response)
     }
   }
+
+  func remoteFileContents(_ data: Data, streamId: UInt32, ok: Bool = true) {
+    data.withUnsafeBytes { raw in
+      var response = CLIPRDR_FILE_CONTENTS_RESPONSE(
+        common: .init(msgType: 9, msgFlags: ok ? 1 : 2, dataLen: UInt32(data.count + 4)),
+        streamId: streamId, cbRequested: UInt32(data.count),
+        requestedData: raw.bindMemory(to: UInt8.self).baseAddress)
+      _ = context.pointee.ServerFileContentsResponse?(context, &response)
+    }
+  }
 }
 
 final class RdpClipboardBridgeTests: XCTestCase {
@@ -191,5 +201,39 @@ final class RdpClipboardBridgeTests: XCTestCase {
     h.remoteData(try XCTUnwrap(RdpClipboardText.encode("stale remote text")))
 
     XCTAssertEqual(h.pb.string(forType: .string), "keep local copy")
+  }
+
+  func testViewOnlyCancelBlocksInFlightFileManifestBeforePoll() throws {
+    let h = ClipboardBridgeHarness()
+    h.ready(active: true)
+    h.remoteList(files: true)
+    XCTAssertEqual(h.requestedFormats, [0xD001])
+
+    // Transition to view-only on IPC thread: setActive(false) + cancelFileTransfer() before pollLocalChange() runs.
+    h.bridge.setActive(false)
+    h.bridge.cancelFileTransfer()
+
+    // In-flight ServerFormatDataResponse arrives in the same FreeRDP event pass before pollLocalChange().
+    h.remoteData(try RdpClipboardFiles.encode([.init(name: "leaked.txt", size: 0, isDirectory: false)]))
+    let urls = (h.pb.readObjects(forClasses: [NSURL.self]) as? [URL]) ?? []
+    XCTAssertTrue(urls.isEmpty, "In-flight file manifest must not publish after view-only cancel: \(urls)")
+    XCTAssertTrue(h.requestedFiles.isEmpty)
+  }
+
+  func testViewOnlyCancelBlocksInFlightFileChunkBeforePoll() throws {
+    let h = ClipboardBridgeHarness()
+    h.ready(active: true)
+    h.remoteList(files: true)
+    h.remoteData(try RdpClipboardFiles.encode([.init(name: "chunked.bin", size: 4, isDirectory: false)]))
+    let req = try XCTUnwrap(h.requestedFiles.first)
+
+    // Switch to view-only while file chunk is in flight, before pollLocalChange() can run.
+    h.bridge.setActive(false)
+    h.bridge.cancelFileTransfer()
+
+    // Queued ServerFileContentsResponse arrives on the RDP thread before pollLocalChange().
+    h.remoteFileContents(Data([1, 2, 3, 4]), streamId: req.streamId)
+    let urls = (h.pb.readObjects(forClasses: [NSURL.self]) as? [URL]) ?? []
+    XCTAssertTrue(urls.isEmpty, "In-flight file chunk must not complete or publish after view-only cancel: \(urls)")
   }
 }

@@ -61,6 +61,17 @@ public enum NativeRdpSessionState: Sendable, Equatable {
   case failed(error: RdpSessionError)
 }
 
+/// Input and clipboard policy for an RDP session (S1-03, AG-010, AG-012).
+/// Reusable gate for both local user input and future supervised agent control.
+public enum RdpInputPolicy: String, Codable, Sendable, Equatable, CaseIterable {
+  case interactive
+  case viewOnly
+
+  public var isViewOnly: Bool { self == .viewOnly }
+  public var allowsInput: Bool { self == .interactive }
+  public var allowsClipboard: Bool { self == .interactive }
+}
+
 /// Configuration required to establish a native RDP session.
 public struct RdpSessionConfiguration: Sendable, Equatable {
   public let id: UUID
@@ -68,7 +79,9 @@ public struct RdpSessionConfiguration: Sendable, Equatable {
   public let port: Int
   public let username: String
   public let credentialRefID: String?
+  public let options: RdpConnectionOptions
   public let initialResolution: RdpDisplayResolution
+  public var inputPolicy: RdpInputPolicy
   /// Mac folder shared with Windows as `\\tsclient\<name>`; nil = no device redirection.
   public var sharedFolderPath: String?
 
@@ -79,14 +92,18 @@ public struct RdpSessionConfiguration: Sendable, Equatable {
     username: String,
     credentialRefID: String?,
     initialResolution: RdpDisplayResolution = RdpDisplayResolution(width: 1920, height: 1080, scaleFactor: 100),
-    sharedFolderPath: String? = nil
+    sharedFolderPath: String? = nil,
+    options: RdpConnectionOptions = RdpConnectionOptions(),
+    inputPolicy: RdpInputPolicy = .interactive
   ) {
     self.id = id
     self.host = host
     self.port = port
     self.username = username
     self.credentialRefID = credentialRefID
-    self.initialResolution = initialResolution
+    self.options = options
+    self.initialResolution = options.initialResolution(initialResolution)
+    self.inputPolicy = inputPolicy
     self.sharedFolderPath = sharedFolderPath
   }
 }
@@ -95,11 +112,16 @@ public struct RdpSessionConfiguration: Sendable, Equatable {
 public protocol RdpSessionTransport: AnyObject, Sendable {
   var id: UUID { get }
   var state: NativeRdpSessionState { get }
+  var inputPolicy: RdpInputPolicy { get }
+  var isViewOnly: Bool { get }
   var onStateChange: (@Sendable (NativeRdpSessionState) -> Void)? { get set }
+  var onInputPolicyChange: (@Sendable (RdpInputPolicy) -> Void)? { get set }
   var onFrameReady: (@Sendable (RdpFramebuffer) -> Void)? { get set }
 
   func connect() async throws
   func disconnect() async
+  func setInputPolicy(_ policy: RdpInputPolicy)
+  func setViewOnly(_ viewOnly: Bool)
   func sendKeyEvent(_ event: RdpKeyboardEvent)
   func sendPointerEvent(x: UInt16, y: UInt16, buttonFlags: UInt16)
   func updateResolution(_ resolution: RdpDisplayResolution)
@@ -119,6 +141,7 @@ public final class NativeRdpSession: RdpSessionTransport, @unchecked Sendable {
 
   private let lock = NSLock()
   private var _state: NativeRdpSessionState = .idle
+  private var _inputPolicy: RdpInputPolicy
   private var activeChallenge: RdpCertificateTrustChallenge?
   private let helperURL: URL?
   private var client: RdpHelperProcess?
@@ -129,13 +152,45 @@ public final class NativeRdpSession: RdpSessionTransport, @unchecked Sendable {
   private let trustDecision = DispatchSemaphore(value: 0)
   private var trustAccepted = false
   private var _onStateChange: (@Sendable (NativeRdpSessionState) -> Void)?
+  private var _onInputPolicyChange: (@Sendable (RdpInputPolicy) -> Void)?
+  private var _onReleaseHeldInput: (@Sendable () -> Void)?
+  private struct HeldKey: Hashable, Comparable {
+    let scancode: UInt16
+    let isExtended: Bool
+
+    static func < (lhs: HeldKey, rhs: HeldKey) -> Bool {
+      if lhs.scancode != rhs.scancode { return lhs.scancode < rhs.scancode }
+      return !lhs.isExtended && rhs.isExtended
+    }
+  }
+
+  private static let pointerButtonPairs: [(down: UInt16, up: UInt16)] = [
+    (0x01, 0x02),
+    (0x04, 0x08),
+    (0x09, 0x0A),
+  ]
+
+  private var heldKeys: Set<HeldKey> = []
+  private var heldButtons: Set<UInt16> = []
+  private var lastPointerPosition: (x: UInt16, y: UInt16) = (0, 0)
   private var clipboardFocused = false
+  private var effectiveClipboardFocused = false
   private var _onClipboardStatus: (@Sendable (String, Bool) -> Void)?
   private var _onFrameReady: (@Sendable (RdpFramebuffer) -> Void)?
 
   public var onStateChange: (@Sendable (NativeRdpSessionState) -> Void)? {
     get { lock.withLock { _onStateChange } }
     set { lock.withLock { _onStateChange = newValue } }
+  }
+  public var onInputPolicyChange: (@Sendable (RdpInputPolicy) -> Void)? {
+    get { lock.withLock { _onInputPolicyChange } }
+    set { lock.withLock { _onInputPolicyChange = newValue } }
+  }
+  /// Invoked synchronously right before transitioning to `.viewOnly` so the active input source
+  /// can flush any held key/button release events through the transport before the input gate closes.
+  public var onReleaseHeldInput: (@Sendable () -> Void)? {
+    get { lock.withLock { _onReleaseHeldInput } }
+    set { lock.withLock { _onReleaseHeldInput = newValue } }
   }
   public var onFrameReady: (@Sendable (RdpFramebuffer) -> Void)? {
     get { lock.withLock { _onFrameReady } }
@@ -147,15 +202,79 @@ public final class NativeRdpSession: RdpSessionTransport, @unchecked Sendable {
     set { lock.withLock { _onClipboardStatus = newValue } }
   }
 
+  public var inputPolicy: RdpInputPolicy {
+    lock.withLock { _inputPolicy }
+  }
+
+  public var isViewOnly: Bool {
+    inputPolicy.isViewOnly
+  }
+
+  public func setViewOnly(_ viewOnly: Bool) {
+    setInputPolicy(viewOnly ? .viewOnly : .interactive)
+  }
+
+  public func setInputPolicy(_ policy: RdpInputPolicy) {
+    let transitionResult = lock.withLock { () -> (
+      changed: Bool,
+      releaseCallback: (@Sendable () -> Void)?,
+      policyCallback: (@Sendable (RdpInputPolicy) -> Void)?
+    ) in
+      guard !isClosed, _inputPolicy != policy else {
+        return (false, nil, nil)
+      }
+      if policy.isViewOnly {
+        if _state == .connected, let client {
+          flushHeldInputLocked(to: client)
+        } else {
+          heldKeys.removeAll()
+          heldButtons.removeAll()
+        }
+      }
+      _inputPolicy = policy
+      let newEffectiveFocus = clipboardFocused && policy.allowsClipboard
+      let focusChanged = effectiveClipboardFocused != newEffectiveFocus
+      effectiveClipboardFocused = newEffectiveFocus
+      if focusChanged {
+        client?.setClipboardFocused(newEffectiveFocus)
+      }
+      if !policy.allowsClipboard {
+        client?.cancelClipboardFiles()
+      }
+      return (
+        true,
+        policy.isViewOnly ? _onReleaseHeldInput : nil,
+        _onInputPolicyChange
+      )
+    }
+    guard transitionResult.changed else { return }
+    transitionResult.releaseCallback?()
+    transitionResult.policyCallback?(policy)
+  }
+
+  private func flushHeldInputLocked(to helper: RdpHelperProcess) {
+    let keysToRelease = heldKeys.sorted()
+    heldKeys.removeAll()
+    for key in keysToRelease {
+      helper.sendKey(RdpKeyboardEvent(scancode: key.scancode, isExtended: key.isExtended, isKeyUp: true))
+    }
+    let pos = lastPointerPosition
+    for pair in Self.pointerButtonPairs where heldButtons.contains(pair.down) {
+      helper.sendPointer(x: pos.x, y: pos.y, buttonFlags: pair.up)
+    }
+    heldButtons.removeAll()
+  }
+
   public func cancelClipboardFiles() { lock.withLock { client }?.cancelClipboardFiles() }
 
   public func setClipboardFocused(_ focused: Bool) {
-    let helper = lock.withLock { () -> RdpHelperProcess? in
-      guard clipboardFocused != focused else { return nil }
+    lock.withLock {
       clipboardFocused = focused
-      return client
+      let newEffectiveFocus = focused && _inputPolicy.allowsClipboard
+      guard effectiveClipboardFocused != newEffectiveFocus else { return }
+      effectiveClipboardFocused = newEffectiveFocus
+      client?.setClipboardFocused(newEffectiveFocus)
     }
-    helper?.setClipboardFocused(focused)
   }
 
   /// Test hook: pid of the running helper.
@@ -176,6 +295,7 @@ public final class NativeRdpSession: RdpSessionTransport, @unchecked Sendable {
     self.helperURL = helperURL
     self.id = configuration.id
     self.configuration = configuration
+    self._inputPolicy = configuration.inputPolicy
     self.certificateVerifier = certificateVerifier
     self.credentialResolver = credentialResolver
   }
@@ -247,7 +367,7 @@ public final class NativeRdpSession: RdpSessionTransport, @unchecked Sendable {
     }
     let client = RdpHelperProcess(
       helperURL: url, host: configuration.host, port: configuration.port,
-      resolution: configuration.initialResolution, sharedFolder: sharedFolder?.path,
+      resolution: configuration.initialResolution, sharedFolder: sharedFolder?.path, options: configuration.options,
       callbacks: .init(
         onCertificate: { [weak self] cert, changed in
           // verification may wait for the user; keep the helper reader thread free for the watchdog
@@ -269,8 +389,12 @@ public final class NativeRdpSession: RdpSessionTransport, @unchecked Sendable {
           self?.lock.withLock { self?._onClipboardStatus }?(message, busy)
         }
       ))
-    let focused = lock.withLock { self.client = client; return clipboardFocused }
-    client.setClipboardFocused(focused)
+    lock.withLock {
+      self.client = client
+      let effective = clipboardFocused && _inputPolicy.allowsClipboard
+      effectiveClipboardFocused = effective
+      client.setClipboardFocused(effective)
+    }
     do {
       // start inside the body so no helper message can arrive before the milestone is armed
       try await awaitMilestone {
@@ -279,7 +403,19 @@ public final class NativeRdpSession: RdpSessionTransport, @unchecked Sendable {
           resumeMilestone(.failure(RdpSessionError.helperProcessFailed("Session closed before start.")))
           return
         }
-        do { try client.start() } catch { resumeMilestone(.failure(error)) }
+        do {
+          try client.start()
+          lock.withLock {
+            let effective = clipboardFocused && _inputPolicy.allowsClipboard
+            effectiveClipboardFocused = effective
+            client.setClipboardFocused(effective)
+            if !_inputPolicy.allowsClipboard {
+              client.cancelClipboardFiles()
+            }
+          }
+        } catch {
+          resumeMilestone(.failure(error))
+        }
       }
     } catch {
       if let rdp = error as? RdpSessionError { transition(to: .failed(error: rdp)) }
@@ -436,18 +572,36 @@ public final class NativeRdpSession: RdpSessionTransport, @unchecked Sendable {
   // MARK: - Input & Display Forwarding
 
   public func sendKeyEvent(_ event: RdpKeyboardEvent) {
-    guard state == .connected else { return }
-    client?.sendKey(event)
+    lock.withLock {
+      guard !isClosed, _state == .connected, _inputPolicy.allowsInput, let client else { return }
+      let key = HeldKey(scancode: event.scancode, isExtended: event.isExtended)
+      if event.isKeyUp {
+        heldKeys.remove(key)
+      } else {
+        heldKeys.insert(key)
+      }
+      client.sendKey(event)
+    }
   }
 
   public func sendPointerEvent(x: UInt16, y: UInt16, buttonFlags: UInt16) {
-    guard state == .connected else { return }
-    client?.sendPointer(x: x, y: y, buttonFlags: buttonFlags)
+    lock.withLock {
+      guard !isClosed, _state == .connected, _inputPolicy.allowsInput, let client else { return }
+      lastPointerPosition = (x, y)
+      if let pair = Self.pointerButtonPairs.first(where: { $0.down == buttonFlags }) {
+        heldButtons.insert(pair.down)
+      } else if let pair = Self.pointerButtonPairs.first(where: { $0.up == buttonFlags }) {
+        heldButtons.remove(pair.down)
+      }
+      client.sendPointer(x: x, y: y, buttonFlags: buttonFlags)
+    }
   }
 
   public func updateResolution(_ resolution: RdpDisplayResolution) {
-    guard state == .connected else { return }
-    client?.resize(resolution)
+    lock.withLock {
+      guard !isClosed, _state == .connected, configuration.options.displayMode == .window, let client else { return }
+      client.resize(resolution)
+    }
   }
 
   // MARK: - Disconnect
@@ -472,8 +626,12 @@ public final class NativeRdpSession: RdpSessionTransport, @unchecked Sendable {
     let first = !isClosed
     isClosed = true
     let client = self.client
+    heldKeys.removeAll()
+    heldButtons.removeAll()
     activeChallenge = nil
     _onFrameReady = nil
+    _onInputPolicyChange = nil
+    _onReleaseHeldInput = nil
     lock.unlock()
     guard first else { return nil }
     decideTrust(false)

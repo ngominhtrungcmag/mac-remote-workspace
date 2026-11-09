@@ -207,3 +207,16 @@
 
 "SFTP listing contains an invalid or unsupported filename." = "SFTP listing contains an invalid or unsupported filename.";
 "Shared folder is not an accessible folder." = "Shared folder is not an accessible folder.";
+
+"Enter a host address or connection URL." = "Enter a host address or connection URL.";
+"The connection target is too long." = "The connection target is too long.";
+"The connection target cannot contain control characters or whitespace." = "The connection target cannot contain control characters or whitespace.";
+"Choose SSH or RDP, or enter an ssh:// or rdp:// URL." = "Choose SSH or RDP, or enter an ssh:// or rdp:// URL.";
+"Only ssh:// and rdp:// URLs are supported." = "Only ssh:// and rdp:// URLs are supported.";
+"Do not include a password in the connection URL." = "Do not include a password in the connection URL.";
+"Connection URLs cannot include query parameters or fragments." = "Connection URLs cannot include query parameters or fragments.";
+"Connection targets cannot include paths, commands, or options." = "Connection targets cannot include paths, commands, or options.";
+"Enter a valid target such as ssh://user@host:22 or rdp://host:3389." = "Enter a valid target such as ssh://user@host:22 or rdp://host:3389.";
+"Enter a valid SSH username without leading '-' or special characters." = "Enter a valid SSH username without leading '-' or special characters.";
+"Do not include a username in an rdp:// URL; enter credentials in the RDP connection step." = "Do not include a username in an rdp:// URL; enter credentials in the RDP connection step.";
+"Enter a valid DNS hostname, IPv4 address, or bracketed IPv6 address." = "Enter a valid DNS hostname, IPv4 address, or bracketed IPv6 address.";

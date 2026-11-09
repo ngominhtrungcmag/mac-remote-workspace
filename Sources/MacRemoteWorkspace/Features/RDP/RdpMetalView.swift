@@ -6,34 +6,45 @@ import SwiftUI
 /// NSViewRepresentable wrapping CAMetalLayer for native RDP display and input.
 public struct RdpMetalView: NSViewRepresentable {
   let renderer: RdpMetalRenderer
+  let options: RdpConnectionOptions
   let frameRevision: UInt64
+  let isViewOnly: Bool
   let onResize: (RdpDisplayResolution) -> Void
   let onKeyEvent: (RdpKeyboardEvent) -> Void
   let onPointerEvent: (UInt16, UInt16, UInt16) -> Void
   let onClipboardFocus: (Bool) -> Void
+  let onHostViewReady: ((RdpMetalHostingView) -> Void)?
 
   public init(
     renderer: RdpMetalRenderer,
     frameRevision: UInt64 = 0,
+    options: RdpConnectionOptions = RdpConnectionOptions(),
+    isViewOnly: Bool = false,
     onResize: @escaping (RdpDisplayResolution) -> Void,
     onKeyEvent: @escaping (RdpKeyboardEvent) -> Void,
     onPointerEvent: @escaping (UInt16, UInt16, UInt16) -> Void,
-    onClipboardFocus: @escaping (Bool) -> Void = { _ in }
+    onClipboardFocus: @escaping (Bool) -> Void = { _ in },
+    onHostViewReady: ((RdpMetalHostingView) -> Void)? = nil
   ) {
+    self.options = options
     self.renderer = renderer
     self.frameRevision = frameRevision
+    self.isViewOnly = isViewOnly
     self.onResize = onResize
     self.onKeyEvent = onKeyEvent
     self.onPointerEvent = onPointerEvent
     self.onClipboardFocus = onClipboardFocus
+    self.onHostViewReady = onHostViewReady
   }
 
   public func makeNSView(context: Context) -> RdpMetalHostingView {
-    let view = RdpMetalHostingView(renderer: renderer)
+    let view = RdpMetalHostingView(renderer: renderer, options: options)
     view.onResize = onResize
     view.onKeyEvent = onKeyEvent
     view.onPointerEvent = onPointerEvent
     view.onClipboardFocus = onClipboardFocus
+    view.setViewOnly(isViewOnly)
+    onHostViewReady?(view)
     return view
   }
 
@@ -42,13 +53,16 @@ public struct RdpMetalView: NSViewRepresentable {
     nsView.onKeyEvent = onKeyEvent
     nsView.onPointerEvent = onPointerEvent
     nsView.onClipboardFocus = onClipboardFocus
-    onClipboardFocus(nsView.window?.isKeyWindow == true && nsView.window?.firstResponder === nsView)
+    onHostViewReady?(nsView)
+    nsView.setViewOnly(isViewOnly)
+    nsView.updateClipboardFocus()
     nsView.renderFrame(revision: frameRevision)
   }
 }
 
 /// AppKit view owning the CAMetalLayer and mapping local input to remote pixels.
 public final class RdpMetalHostingView: NSView {
+  private let options: RdpConnectionOptions
   private let renderer: RdpMetalRenderer
   private var metalLayer: CAMetalLayer?
   private let debouncer = RdpDisplayDebouncer()
@@ -59,6 +73,7 @@ public final class RdpMetalHostingView: NSView {
   private var keyboardInput = RdpKeyboardInput()
   private var pressedButtons: Set<UInt16> = []
   private var lastRemotePoint: (x: UInt16, y: UInt16) = (0, 0)
+  public private(set) var isViewOnly = false
 
   var onClipboardFocus: ((Bool) -> Void)?
   var onResize: ((RdpDisplayResolution) -> Void)?
@@ -67,7 +82,8 @@ public final class RdpMetalHostingView: NSView {
 
   private let pointerButtonPairs: [(down: UInt16, up: UInt16)] = [(0x01, 0x02), (0x04, 0x08), (0x09, 0x0A)]
 
-  public init(renderer: RdpMetalRenderer) {
+  public init(renderer: RdpMetalRenderer, options: RdpConnectionOptions = RdpConnectionOptions()) {
+    self.options = options
     self.renderer = renderer
     super.init(frame: .zero)
     wantsLayer = true
@@ -81,6 +97,25 @@ public final class RdpMetalHostingView: NSView {
   deinit {
     if let windowKeyObserver { NotificationCenter.default.removeObserver(windowKeyObserver) }
     if let windowObserver { NotificationCenter.default.removeObserver(windowObserver) }
+  }
+
+  /// Applies view-only mode. When transitioning into view-only, any held local keys/buttons
+  /// are released first through the existing release path before local input is suppressed.
+  public func setViewOnly(_ viewOnly: Bool) {
+    guard isViewOnly != viewOnly else { return }
+    if viewOnly {
+      releasePressedInput()
+      isViewOnly = true
+      onClipboardFocus?(false)
+    } else {
+      isViewOnly = false
+      updateClipboardFocus()
+    }
+  }
+
+  func updateClipboardFocus() {
+    let focused = !isViewOnly && window?.isKeyWindow == true && window?.firstResponder === self
+    onClipboardFocus?(focused)
   }
 
   public override func makeBackingLayer() -> CALayer {
@@ -109,7 +144,7 @@ public final class RdpMetalHostingView: NSView {
       ) { [weak self] _ in
         Task { @MainActor in
           guard let self else { return }
-          self.onClipboardFocus?(self.window?.firstResponder === self)
+          self.updateClipboardFocus()
         }
       }
       window.acceptsMouseMovedEvents = true
@@ -156,7 +191,7 @@ public final class RdpMetalHostingView: NSView {
 
   public override func becomeFirstResponder() -> Bool {
     let accepted = super.becomeFirstResponder()
-    if accepted { onClipboardFocus?(window?.isKeyWindow == true) }
+    if accepted { updateClipboardFocus() }
     return accepted
   }
 
@@ -175,7 +210,7 @@ public final class RdpMetalHostingView: NSView {
 
   private func triggerResize() {
     guard bounds.width > 0, bounds.height > 0 else { return }
-    let resolution = RdpDisplayResolution.from(
+    let resolution = options.resolution(
       pointWidth: Double(bounds.width),
       pointHeight: Double(bounds.height),
       backingScaleFactor: Double(window?.backingScaleFactor ?? 2)
@@ -195,7 +230,7 @@ public final class RdpMetalHostingView: NSView {
   // MARK: - Keyboard Input
 
   public override func performKeyEquivalent(with event: NSEvent) -> Bool {
-    guard window?.firstResponder === self, event.type == .keyDown,
+    guard !isViewOnly, window?.firstResponder === self, event.type == .keyDown,
       event.modifierFlags.contains(.command),
       RdpKeyboardInput.isCommandShortcut(event.keyCode)
     else { return super.performKeyEquivalent(with: event) }
@@ -204,6 +239,7 @@ public final class RdpMetalHostingView: NSView {
   }
 
   public override func keyDown(with event: NSEvent) {
+    guard !isViewOnly else { return }
     guard RdpScancodeMapper.mapMacKeyCode(event.keyCode) != nil else {
       super.keyDown(with: event)
       return
@@ -212,10 +248,12 @@ public final class RdpMetalHostingView: NSView {
   }
 
   public override func keyUp(with event: NSEvent) {
+    guard !isViewOnly else { return }
     for mapped in keyboardInput.keyUp(event.keyCode) { onKeyEvent?(mapped) }
   }
 
   public override func flagsChanged(with event: NSEvent) {
+    guard !isViewOnly else { return }
     if event.keyCode == 0x39, let down = RdpScancodeMapper.mapMacKeyCode(0x39) {
       onKeyEvent?(down)
       onKeyEvent?(RdpKeyboardEvent(scancode: down.scancode, isExtended: down.isExtended, isKeyUp: true))
@@ -228,7 +266,8 @@ public final class RdpMetalHostingView: NSView {
     for mapped in keyboardInput.modifierChanged(event.keyCode) { onKeyEvent?(mapped) }
   }
 
-  private func releasePressedInput() {
+  /// Releases any held keyboard keys/modifiers and mouse buttons via the existing release path.
+  public func releasePressedInput() {
     for mapped in keyboardInput.releaseAll() { onKeyEvent?(mapped) }
     for (down, up) in pointerButtonPairs where pressedButtons.contains(down) {
       onPointerEvent?(lastRemotePoint.x, lastRemotePoint.y, up)
@@ -256,6 +295,7 @@ public final class RdpMetalHostingView: NSView {
   public override func otherMouseDragged(with event: NSEvent) { forwardPointer(event: event, buttonFlag: 0) }
 
   public override func scrollWheel(with event: NSEvent) {
+    guard !isViewOnly else { return }
     guard let point = remotePoint(event: event, clampToImage: false) else { return }
     let deltaY = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.deltaY * 10
     let deltaX = event.hasPreciseScrollingDeltas ? event.scrollingDeltaX : event.deltaX * 10
@@ -272,6 +312,7 @@ public final class RdpMetalHostingView: NSView {
   }
 
   private func forwardPointer(event: NSEvent, buttonFlag: UInt16) {
+    guard !isViewOnly else { return }
     if let pair = pointerButtonPairs.first(where: { $0.down == buttonFlag }) {
       guard let point = remotePoint(event: event, clampToImage: false) else { return }
       pressedButtons.insert(pair.down)

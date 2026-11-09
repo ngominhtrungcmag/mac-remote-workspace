@@ -43,7 +43,7 @@ final class RdpHelperProcess: @unchecked Sendable {
   var processIdentifier: Int32? { lock.withLock { process.isRunning ? process.processIdentifier : nil } }
 
   init(
-    helperURL: URL, host: String, port: Int, resolution: RdpDisplayResolution, sharedFolder: String? = nil,
+    helperURL: URL, host: String, port: Int, resolution: RdpDisplayResolution, sharedFolder: String? = nil, options: RdpConnectionOptions = RdpConnectionOptions(),
     callbacks: Callbacks
   ) {
     self.helperURL = helperURL
@@ -51,7 +51,7 @@ final class RdpHelperProcess: @unchecked Sendable {
     startMessage = .start(
       host: host, port: port, width: resolution.width, height: resolution.height,
       scaleFactor: resolution.scaleFactor, clipboardDirectory: clipboardDirectory.path,
-      sharedFolder: sharedFolder)
+      sharedFolder: sharedFolder, options: options)
   }
 
   deinit {
@@ -90,8 +90,15 @@ final class RdpHelperProcess: @unchecked Sendable {
     }
     Darwin.close(fds[1])  // so the child's death is EOF for us
     let channel = RdpHelperChannel(fd: fds[0])
-    lock.withLock { self.channel = channel }
+    let initialActive = lock.withLock { () -> Bool in
+      self.channel = channel
+      return appActive && clipboardFocused
+    }
     channel.send(startMessage)
+    channel.send(.clipboardActive(initialActive))
+    if !initialActive {
+      channel.send(.cancelClipboardFiles)
+    }
     observeAppActivity()
 
     let thread = Thread { [self] in readLoop(channel) }

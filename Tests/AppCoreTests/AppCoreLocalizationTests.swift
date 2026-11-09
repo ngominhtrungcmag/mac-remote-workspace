@@ -227,6 +227,33 @@ final class AppCoreLocalizationTests: XCTestCase {
     }
   }
 
+  func testQuickConnectValidationErrorsHaveCatalogEntriesAndLocalizedText() throws {
+    let englishCatalog = try catalog(for: "en")
+    let vietnameseCatalog = try catalog(for: "vi")
+    let cases: [(QuickConnectValidationError, String, String)] = [
+      (.emptyInput, "Enter a host address or connection URL.", "Nhập địa chỉ máy chủ hoặc URL kết nối."),
+      (.inputTooLong, "The connection target is too long.", "Đích kết nối quá dài."),
+      (.containsControlCharacters, "The connection target cannot contain control characters or whitespace.", "Đích kết nối không được chứa ký tự điều khiển hoặc khoảng trắng."),
+      (.missingProtocol, "Choose SSH or RDP, or enter an ssh:// or rdp:// URL.", "Chọn SSH hoặc RDP, hoặc nhập URL ssh:// hay rdp://."),
+      (.unsupportedProtocol, "Only ssh:// and rdp:// URLs are supported.", "Chỉ hỗ trợ URL ssh:// và rdp://."),
+      (.passwordInTargetNotAllowed, "Do not include a password in the connection URL.", "Không đưa mật khẩu vào URL kết nối."),
+      (.queryOrFragmentNotAllowed, "Connection URLs cannot include query parameters or fragments.", "URL kết nối không được chứa tham số truy vấn hoặc phần fragment."),
+      (.pathOrCommandNotAllowed, "Connection targets cannot include paths, commands, or options.", "Đích kết nối không được chứa đường dẫn, lệnh hoặc tùy chọn."),
+      (.invalidSyntax, "Enter a valid target such as ssh://user@host:22 or rdp://host:3389.", "Nhập đích hợp lệ, chẳng hạn ssh://user@host:22 hoặc rdp://host:3389."),
+      (.invalidUsername, "Enter a valid SSH username without leading '-' or special characters.", "Nhập tên người dùng SSH hợp lệ, không bắt đầu bằng '-' hoặc chứa ký tự đặc biệt."),
+      (.usernameNotSupportedForRDP, "Do not include a username in an rdp:// URL; enter credentials in the RDP connection step.", "Không đưa tên người dùng vào URL rdp://; hãy nhập thông tin xác thực ở bước kết nối RDP."),
+      (.invalidHost, "Enter a valid DNS hostname, IPv4 address, or bracketed IPv6 address.", "Nhập tên máy chủ DNS, địa chỉ IPv4 hoặc địa chỉ IPv6 trong dấu ngoặc vuông hợp lệ."),
+      (.invalidPort, "Port must be between 1 and 65535.", "Cổng phải nằm trong khoảng 1 đến 65535."),
+    ]
+
+    for (error, expectedEnglish, expectedVietnamese) in cases {
+      XCTAssertEqual(englishCatalog[expectedEnglish], expectedEnglish, "\(error)")
+      XCTAssertEqual(vietnameseCatalog[expectedEnglish], expectedVietnamese, "\(error)")
+      XCTAssertEqual(error.displayDescription(locale: english), expectedEnglish, "\(error)")
+      XCTAssertEqual(error.displayDescription(locale: vietnamese), expectedVietnamese, "\(error)")
+    }
+  }
+
   func testFormattedErrorsPreserveDynamicDiagnosticText() {
     let error = NativeSSHError.authenticationFailed(details: "ProxyJump requires SSH agent authentication.")
     XCTAssertEqual(

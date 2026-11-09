@@ -32,7 +32,7 @@ cp -R "$bin_dir/MacRemoteWorkspace_MacRemoteWorkspace.bundle" "$app_bundle/Conte
 
 cp "$repo_root/LICENSE" "$repo_root/THIRD_PARTY_NOTICES.md" "$app_bundle/Contents/Resources/"
 
-# Regenerate with: swift scripts/make-app-icon.swift <dir>/AppIcon.iconset && iconutil -c icns ...
+# Regenerate with: swift scripts/make-app-icon.swift <dir> && iconutil -c icns <dir>/AppIcon.iconset -o Resources/AppIcon.icns (layered source: Resources/AppIcon.psd)
 cp "$package_dir/Resources/AppIcon.icns" "$app_bundle/Contents/Resources/icon.icns"
 
 cat << EOF > "$app_bundle/Contents/Info.plist"

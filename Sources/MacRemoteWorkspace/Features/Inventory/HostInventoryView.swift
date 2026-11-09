@@ -21,6 +21,8 @@ struct HostEditorSheet: View {
   @State private var rdpPort = "3389"
   @State private var rdpUsername = ""
   @State private var rdpCredentialID: String?
+  @State private var useDefaultRdpOptions: Bool
+  @State private var rdpOptions: RdpConnectionOptions
 
   let host: HostRecord?
   let workspaces: [WorkspaceRecord]
@@ -54,6 +56,10 @@ struct HostEditorSheet: View {
     let preset = host.flatMap { SSHConnectionPreset.load(hostID: $0.id) } ?? SSHConnectionPreset()
     _preset = State(initialValue: preset)
     _portString = State(initialValue: String(preset.port))
+    let preferences = RdpConnectionPreferences()
+    let override = host.flatMap { preferences.override(hostID: $0.id) }
+    _useDefaultRdpOptions = State(initialValue: override == nil)
+    _rdpOptions = State(initialValue: override ?? preferences.globalOptions)
   }
 
   private var selectedWorkspaceGroups: [HostGroupRecord] {
@@ -181,6 +187,9 @@ struct HostEditorSheet: View {
           Text("\(record.label) — \(record.kind.localizedTitle)").tag(String?.some(record.id))
         }
       }
+      Toggle(AppLocalization.string("Use default settings"), isOn: $useDefaultRdpOptions)
+      RdpConnectionOptionsView(options: $rdpOptions)
+        .disabled(useDefaultRdpOptions)
     } header: {
       Text(AppLocalization.string("Remote Desktop (RDP)"))
     } footer: {
@@ -246,6 +255,7 @@ struct HostEditorSheet: View {
         }
       }
       if sshEnabled { try preset.saveThrowing(hostID: saved.id) }
+      try RdpConnectionPreferences().saveOverride(useDefaultRdpOptions ? nil : rdpOptions, hostID: saved.id)
       dismiss()
     } catch {
       validationError = error.localizedDescription

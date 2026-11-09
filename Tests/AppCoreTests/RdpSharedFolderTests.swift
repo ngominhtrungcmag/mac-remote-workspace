@@ -104,7 +104,7 @@ final class RdpSharedFolderTests: XCTestCase {
     XCTAssertEqual(freerdp_settings_get_uint32(settings, FreeRDP_DeviceCount), 1)
     let device = try XCTUnwrap(freerdp_settings_get_pointer_array(settings, FreeRDP_DeviceArray, 0))
     let drive = device.assumingMemoryBound(to: RDPDR_DRIVE.self).pointee
-    XCTAssertEqual(drive.device.Type, RDPDR_DTYP_FILESYSTEM.rawValue)
+    XCTAssertEqual(drive.device.Type, UInt32(RDPDR_DTYP_FILESYSTEM))
     XCTAssertEqual(String(cString: try XCTUnwrap(drive.device.Name)), "Shared U")
     XCTAssertEqual(String(cString: try XCTUnwrap(drive.Path)), folder.path)
     XCTAssertEqual(try loadedChannelNames(sharedFolder: folder), ["drdynvc", "cliprdr", "rdpdr"])

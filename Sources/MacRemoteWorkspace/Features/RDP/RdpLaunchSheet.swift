@@ -393,11 +393,12 @@ struct RdpLaunchSheet: View {
     let refs = credentialRefs
     let resolver = RdpCredentialResolver(credentialLookup: { id in refs.first { $0.id == id } })
     let address = host.address
+    let options = RdpConnectionPreferences().resolved(hostID: host.id)
     let makeSession = {
       NativeRdpSession(
         configuration: RdpSessionConfiguration(
           host: address, port: Int(port), username: user, credentialRefID: refID,
-          sharedFolderPath: validatedFolder?.path),
+          sharedFolderPath: validatedFolder?.path, options: options),
         certificateVerifier: verifier,
         credentialResolver: resolver
       )

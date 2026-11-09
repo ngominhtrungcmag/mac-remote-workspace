@@ -744,3 +744,29 @@
 "Share" = "Chia sẻ";
 "Windows can read and change files in this folder. It appears as %@." = "Windows có thể đọc và thay đổi tệp trong thư mục này. Thư mục hiển thị là %@.";
 "Shared folder is not an accessible folder." = "Thư mục chia sẻ không tồn tại hoặc không truy cập được.";
+
+// Embedded RDP display and connection preferences
+"Desktop resolution" = "Độ phân giải màn hình từ xa";
+"Resize with window" = "Thay đổi theo cửa sổ";
+"Fixed resolutions use exact pixels at 100% scaling." = "Độ phân giải cố định dùng đúng số pixel với tỷ lệ 100%.";
+"Optimize for Retina displays" = "Tối ưu cho màn hình Retina";
+"Retina applies only when resizing with the window. Fixed resolutions use 100% scaling." = "Retina chỉ áp dụng khi thay đổi theo cửa sổ. Độ phân giải cố định dùng tỷ lệ 100%.";
+"Network profile" = "Cấu hình mạng";
+"Automatic (current defaults)" = "Tự động (mặc định hiện tại)";
+"Reduced bandwidth" = "Băng thông thấp";
+"LAN" = "Mạng LAN";
+"Higher pixel resolutions use more memory and bandwidth. Reduced bandwidth limits desktop visual effects; it does not set a bandwidth cap." = "Độ phân giải cao dùng nhiều bộ nhớ và băng thông hơn. Cấu hình băng thông thấp giảm hiệu ứng màn hình, không giới hạn tốc độ mạng.";
+"Applies to new sessions. Reconnect keeps the session's original settings; close and open a new session to use changed settings." = "Áp dụng cho phiên mới. Kết nối lại giữ cài đặt ban đầu của phiên; đóng và mở phiên mới để dùng cài đặt đã thay đổi.";
+"Use default settings" = "Dùng cài đặt mặc định";
+"Embedded RDP settings" = "Cài đặt RDP tích hợp";
+
+"Quick Connect…" = "Kết nối nhanh…";
+"Quick Connect" = "Kết nối nhanh";
+"Connects without saving this host to your workspace inventory. Host trust verification is still enforced before authentication." = "Kết nối mà không lưu máy chủ này vào danh sách không gian làm việc. Danh tính máy chủ vẫn được xác minh trước khi xác thực.";
+"Enter a valid target such as ssh://user@host:22 or rdp://host:3389." = "Nhập đích hợp lệ, ví dụ ssh://user@host:22 hoặc rdp://host:3389.";
+"View Only" = "Chỉ xem";
+"View-only mode is on. Keyboard, mouse, and clipboard input are blocked." = "Chế độ chỉ xem đang bật. Đầu vào từ bàn phím, chuột và bảng nhớ tạm bị chặn.";
+"Toggle view-only mode to block keyboard, mouse, and clipboard input." = "Bật chế độ chỉ xem để chặn đầu vào từ bàn phím, chuột và bảng nhớ tạm.";
+"On" = "Bật";
+"Off" = "Tắt";
+"Quick Connect without saving host" = "Kết nối nhanh mà không lưu máy chủ";

@@ -39,17 +39,20 @@ struct RdpSessionWindowView: View {
   let windowID: String
 
   var body: some View {
-    if let entry = registry.entry(for: windowID) {
-      RdpEmbeddedSessionView(
-        host: entry.host,
-        session: entry.session,
-        onReconnect: { registry.reconnect(windowID: windowID) }
-      )
-      .id(entry.session.id)
-      .onDisappear { registry.close(windowID: windowID, sessionID: entry.session.id) }
-    } else {
-      UnavailableSessionView(title: AppLocalization.string("Remote desktop session ended"), symbol: "display")
+    Group {
+      if let entry = registry.entry(for: windowID) {
+        RdpEmbeddedSessionView(
+          host: entry.host,
+          session: entry.session,
+          onReconnect: { registry.reconnect(windowID: windowID) }
+        )
+        .id(entry.session.id)
+        .onDisappear { registry.close(windowID: windowID, sessionID: entry.session.id) }
+      } else {
+        UnavailableSessionView(title: AppLocalization.string("Remote desktop session ended"), symbol: "display")
+      }
     }
+    .background(RdpDefaultFullscreen())
   }
 }
 

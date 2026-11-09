@@ -19,7 +19,7 @@ public enum RdpHelperMain {
     guard ctrl >= 0 else { exit(2) }
     let channel = RdpHelperChannel(fd: ctrl)
 
-    guard case .start(let host, let port, let w, let h, let scale, let clipboardDirectory, let sharedFolder)? = try? channel.receive() else { exit(2) }
+    guard case .start(let host, let port, let w, let h, let scale, let clipboardDirectory, let sharedFolder, let options)? = try? channel.receive() else { exit(2) }
 
     let decisionLock = NSLock()
     let decisionReady = DispatchSemaphore(value: 0)
@@ -28,7 +28,7 @@ public enum RdpHelperMain {
     let client = FreeRdpClient(
       host: host, port: port, resolution: RdpDisplayResolution(width: w, height: h, scaleFactor: scale),
       clipboardDirectory: clipboardDirectory.map { URL(fileURLWithPath: $0) },
-      sharedFolder: sharedFolder.map { URL(fileURLWithPath: $0) },
+      sharedFolder: sharedFolder.map { URL(fileURLWithPath: $0) }, options: options ?? RdpConnectionOptions(),
       callbacks: .init(
         verifyCertificate: { cert, changed in
           channel.send(

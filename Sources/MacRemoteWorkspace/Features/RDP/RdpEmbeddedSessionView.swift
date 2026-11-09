@@ -1,6 +1,11 @@
 import AppCore
 import SwiftUI
 
+/// Resolves RDP session presentation copy via `AppLocalization` so fallback English is used until S1-05 catalog sync.
+func rdpSessionText(_ key: String) -> String {
+  AppLocalization.string(key)
+}
+
 /// Embedded native RDP session viewer with Metal rendering, host certificate verification,
 /// floating session toolbar, and crash recovery (US-021, FR-021).
 public struct RdpEmbeddedSessionView: View {
@@ -16,6 +21,7 @@ public struct RdpEmbeddedSessionView: View {
   @State private var isToolbarHidden = false
 
   private var isConnected: Bool { model.state == .connected }
+  private var isViewOnly: Bool { model.isViewOnly }
   private var canReconnect: Bool {
     guard onReconnect != nil else { return false }
     switch model.state {
@@ -45,22 +51,23 @@ public struct RdpEmbeddedSessionView: View {
       RdpMetalView(
         renderer: renderer,
         frameRevision: model.frameRevision,
+        options: session.configuration.options,
+        isViewOnly: isViewOnly,
         onResize: { resolution in
           model.updateResolution(resolution)
         },
-        // The AppKit view stays first responder, so input must be gated here, not only by hit testing.
+        // The AppKit view stays first responder, so input must be gated here and in NativeRdpSession, not only by hit testing.
         onKeyEvent: { event in
-          guard session.state == .connected else { return }
           session.sendKeyEvent(event)
         },
         onPointerEvent: { x, y, flags in
-          guard session.state == .connected else { return }
           session.sendPointerEvent(x: x, y: y, buttonFlags: flags)
         },
-        onClipboardFocus: { session.setClipboardFocused($0) }
+        onClipboardFocus: { session.setClipboardFocused($0) },
+        onHostViewReady: { model.bindHostView($0) }
       )
       .ignoresSafeArea()
-      .allowsHitTesting(isConnected)
+      .allowsHitTesting(isConnected && !isViewOnly)
 
       if !isConnected {
         Color.black.opacity(0.55).ignoresSafeArea()
@@ -165,6 +172,19 @@ public struct RdpEmbeddedSessionView: View {
         .frame(height: 16)
 
       Button {
+        model.toggleViewOnly()
+      } label: {
+        Label(
+          rdpSessionText("View Only"),
+          systemImage: isViewOnly ? "eye.slash.fill" : "eye"
+        )
+      }
+      .buttonStyle(.borderless)
+      .help(rdpSessionText(isViewOnly ? "View-only mode is on. Keyboard, mouse, and clipboard input are blocked." : "Toggle view-only mode to block keyboard, mouse, and clipboard input."))
+      .accessibilityLabel(rdpSessionText("View Only"))
+      .accessibilityValue(rdpSessionText(isViewOnly ? "On" : "Off"))
+
+      Button {
         for event in RdpScancodeMapper.ctrlAltDelSequence() {
           session.sendKeyEvent(event)
         }
@@ -172,7 +192,7 @@ public struct RdpEmbeddedSessionView: View {
         Label(AppLocalization.string("Send Ctrl+Alt+Del"), systemImage: "keyboard")
       }
       .buttonStyle(.borderless)
-      .disabled(!isConnected)
+      .disabled(!isConnected || isViewOnly)
       .accessibilityLabel(AppLocalization.string("Send Ctrl+Alt+Del"))
 
       Button {
@@ -467,6 +487,7 @@ public struct RdpEmbeddedSessionView: View {
 @MainActor
 private final class RdpEmbeddedSessionModel: ObservableObject {
   @Published private(set) var state: NativeRdpSessionState = .idle
+  @Published private(set) var inputPolicy: RdpInputPolicy
   @Published private(set) var hasReceivedFrame = false
   @Published private(set) var firstFrameTimedOut = false
   @Published private(set) var renderError: String?
@@ -474,9 +495,12 @@ private final class RdpEmbeddedSessionModel: ObservableObject {
   @Published private(set) var clipboardBusy = false
   @Published private(set) var frameRevision: UInt64 = 0
 
+  var isViewOnly: Bool { inputPolicy.isViewOnly }
+
   private let session: NativeRdpSession
   private let renderer: RdpMetalRenderer
   private let uploader: RdpFrameUploader
+  private weak var hostView: RdpMetalHostingView?
   private var started = false
   private var stopped = false
   private var firstFrameTimeout: Task<Void, Never>?
@@ -485,7 +509,58 @@ private final class RdpEmbeddedSessionModel: ObservableObject {
   init(session: NativeRdpSession, renderer: RdpMetalRenderer) {
     self.session = session
     self.renderer = renderer
+    self.inputPolicy = session.inputPolicy
     self.uploader = RdpFrameUploader(renderer: renderer)
+    let sessionBox = session
+    let holder = WeakHostViewBox()
+    self.hostViewBox = holder
+    sessionBox.onReleaseHeldInput = { [holder] in
+      if Thread.isMainThread {
+        MainActor.assumeIsolated {
+          holder.view?.releasePressedInput()
+        }
+      } else {
+        Task { @MainActor [holder] in
+          holder.view?.releasePressedInput()
+        }
+      }
+    }
+    sessionBox.onInputPolicyChange = { [weak self] policy in
+      if Thread.isMainThread {
+        MainActor.assumeIsolated {
+          guard let self, !self.stopped else { return }
+          self.inputPolicy = policy
+          self.hostView?.setViewOnly(policy.isViewOnly)
+        }
+      } else {
+        Task { @MainActor [weak self] in
+          guard let self, !self.stopped else { return }
+          let currentPolicy = self.session.inputPolicy
+          self.inputPolicy = currentPolicy
+          self.hostView?.setViewOnly(currentPolicy.isViewOnly)
+        }
+      }
+    }
+  }
+
+  private let hostViewBox: WeakHostViewBox
+
+  func bindHostView(_ view: RdpMetalHostingView) {
+    hostView = view
+    hostViewBox.view = view
+    let currentPolicy = session.inputPolicy
+    inputPolicy = currentPolicy
+    view.setViewOnly(currentPolicy.isViewOnly)
+  }
+
+  func toggleViewOnly() {
+    setViewOnly(!isViewOnly)
+  }
+
+  func setViewOnly(_ viewOnly: Bool) {
+    session.setViewOnly(viewOnly)
+    inputPolicy = session.inputPolicy
+    hostView?.setViewOnly(session.isViewOnly)
   }
 
   func start() {
@@ -529,6 +604,8 @@ private final class RdpEmbeddedSessionModel: ObservableObject {
     stopped = true
     firstFrameTimeout?.cancel()
     session.onStateChange = nil
+    session.onInputPolicyChange = nil
+    session.onReleaseHeldInput = nil
     session.onFrameReady = nil
     session.onClipboardStatus = nil
     session.setClipboardFocused(false)
@@ -616,6 +693,10 @@ private final class RdpFrameUploader: @unchecked Sendable {
       renderer.clear()
     }
   }
+}
+
+private final class WeakHostViewBox: @unchecked Sendable {
+  @MainActor weak var view: RdpMetalHostingView?
 }
 
 // Preview omitted: RdpEmbeddedSessionView requires a live RDP session.

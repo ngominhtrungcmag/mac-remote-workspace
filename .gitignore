@@ -27,3 +27,5 @@ DerivedData/
 SHA256SUMS.txt
 CLAUDE.md
 GEMINI.md
+*.whl
+*.tar.gz

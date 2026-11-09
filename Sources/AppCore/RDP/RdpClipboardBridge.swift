@@ -60,6 +60,8 @@ final class RdpClipboardBridge: @unchecked Sendable {
   private var requestIsFiles = false
   private var cancelled = false
   private var becameActive = false
+  private var invalidationEpoch: UInt64 = 0
+  private var consumedInvalidationEpoch: UInt64 = 0
 
   func configureFiles(directory: URL?, onStatus: (@Sendable (String, Bool) -> Void)?) {
     files.directory = directory
@@ -67,7 +69,10 @@ final class RdpClipboardBridge: @unchecked Sendable {
   }
 
   func cancelFileTransfer() {
-    activeLock.withLock { cancelled = true }
+    activeLock.withLock {
+      cancelled = true
+      invalidationEpoch &+= 1
+    }
   }
 
   init(pasteboard: NSPasteboard = .general) {
@@ -87,6 +92,32 @@ final class RdpClipboardBridge: @unchecked Sendable {
     activeLock.lock()
     defer { activeLock.unlock() }
     return active
+  }
+
+  /// Applies any pending cross-thread cancellation (`cancelFileTransfer()`) immediately on the RDP thread
+  /// before processing incoming channel callbacks or polling local changes.
+  @discardableResult
+  private func processPendingCancellation(_ context: UnsafeMutablePointer<CliprdrClientContext>?) -> Bool {
+    let shouldCancel = activeLock.withLock { () -> Bool in
+      guard cancelled || invalidationEpoch != consumedInvalidationEpoch else { return false }
+      cancelled = false
+      consumedInvalidationEpoch = invalidationEpoch
+      return true
+    }
+    guard shouldCancel else { return false }
+    generation &+= 1
+    remoteFormat = nil
+    requestedFormat = nil
+    formatDeadline = nil
+    files.cancel(clearPublished: true)
+    files.clearSource()
+    announcedText = false
+    files.onStatus?("Clipboard file transfer cancelled. Copy again to retry.", false)
+    if ready, let context {
+      var empty = CLIPRDR_FORMAT_LIST(common: .init(msgType: 2, msgFlags: 0, dataLen: 0), numFormats: 0, formats: nil)
+      _ = context.pointee.ClientFormatList?(context, &empty)
+    }
+    return true
   }
 
   // MARK: Channel hookup (RDP thread)
@@ -116,11 +147,13 @@ final class RdpClipboardBridge: @unchecked Sendable {
     }
     ctx.pointee.ServerFileContentsRequest = { c, request in
       guard let c, let request, let me = RdpClipboardBridge.bridge(c) else { return 1 }
+      _ = me.processPendingCancellation(c)
       return me.files.serve(c, request.pointee,
         allowed: me.isActive && me.pasteboard.changeCount == me.announcedChangeCount)
     }
     ctx.pointee.ServerFileContentsResponse = { c, response in
       guard let c, let response, let me = RdpClipboardBridge.bridge(c) else { return 1 }
+      if me.processPendingCancellation(c) { return 0 }
       me.files.receiveContents(response.pointee, context: c)
       return 0
     }
@@ -144,21 +177,12 @@ final class RdpClipboardBridge: @unchecked Sendable {
   /// Call periodically from the RDP loop; advances transfers and announces local selections.
   func pollLocalChange() {
     guard ready, let context else { return }
+    _ = processPendingCancellation(context)
     files.poll()
     if let formatDeadline, Date() > formatDeadline {
       self.formatDeadline = nil
       formatTimedOut = true
       files.onStatus?("Clipboard response timed out. Reconnect to retry file copy.", false)
-    }
-    if activeLock.withLock({ let value = cancelled; cancelled = false; return value }) {
-      generation &+= 1
-      remoteFormat = nil
-      files.cancel(clearPublished: true)
-      files.clearSource()
-      announcedText = false
-      files.onStatus?("Clipboard file transfer cancelled. Copy again to retry.", false)
-      var empty = CLIPRDR_FORMAT_LIST(common: .init(msgType: 2, msgFlags: 0, dataLen: 0), numFormats: 0, formats: nil)
-      _ = context.pointee.ClientFormatList?(context, &empty)
     }
     guard isActive else { return }
     let count = pasteboard.changeCount
@@ -188,6 +212,7 @@ final class RdpClipboardBridge: @unchecked Sendable {
     }
     guard rc == 0 else { return rc }
     ready = true
+    if processPendingCancellation(c) { return 0 }
     announcedChangeCount = pasteboard.changeCount
     return sendFormatList(c, available: isActive && hasLocalText)
   }
@@ -226,6 +251,7 @@ final class RdpClipboardBridge: @unchecked Sendable {
   private func serverFormatList(
     _ c: UnsafeMutablePointer<CliprdrClientContext>, _ list: UnsafePointer<CLIPRDR_FORMAT_LIST>
   ) -> UInt32 {
+    _ = processPendingCancellation(c)
     var response = CLIPRDR_FORMAT_LIST_RESPONSE(common: CLIPRDR_HEADER(msgType: 3, msgFlags: 1, dataLen: 0))
     let rc = c.pointee.ClientFormatListResponse?(c, &response) ?? 1
     generation &+= 1
@@ -261,6 +287,7 @@ final class RdpClipboardBridge: @unchecked Sendable {
   }
 
   private func serverDataRequest(_ c: UnsafeMutablePointer<CliprdrClientContext>, _ formatId: UInt32) -> UInt32 {
+    _ = processPendingCancellation(c)
     let data: Data?
     let allowed = isActive && pasteboard.changeCount == announcedChangeCount
     if allowed,
@@ -283,6 +310,7 @@ final class RdpClipboardBridge: @unchecked Sendable {
   }
 
   private func serverDataResponse(_ resp: UnsafePointer<CLIPRDR_FORMAT_DATA_RESPONSE>) -> UInt32 {
+    if processPendingCancellation(context) { return 0 }
     guard !formatTimedOut, requestedFormat != nil else { return 0 }
     formatDeadline = nil
     requestedFormat = nil

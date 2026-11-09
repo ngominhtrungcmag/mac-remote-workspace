@@ -7,12 +7,14 @@ struct SSHSessionSheet: View {
   @StateObject private var viewModel: SSHSessionViewModel
   private let group: HostGroupRecord?
   private let embedded: Bool
-  private let connectOnOpen: Bool
+  private let connectOnOpenToken: Int
   @State private var didPrepareConnection = false
+  @State private var openLifecycle = SSHSessionOpenLifecycle()
   @State private var hasSavedSettings = false
   @State private var canAutoConnect = false
   private let onRunningChange: ((Bool) -> Void)?
   private let onLiveChange: ((Bool) -> Void)?
+  private let onActiveChange: ((Bool) -> Void)?
   private let onUsernameChange: ((String) -> Void)?
 
   @State private var form = SSHConnectionFormState()
@@ -30,12 +32,23 @@ struct SSHSessionSheet: View {
   @State private var showConnectionSettings = false
   @State private var confirmClose = false
 
-  init(host: HostRecord, group: HostGroupRecord? = nil, embedded: Bool = false, connectOnOpen: Bool = false, onUsernameChange: ((String) -> Void)? = nil, onLiveChange: ((Bool) -> Void)? = nil, onRunningChange: ((Bool) -> Void)? = nil) {
+  init(
+    host: HostRecord,
+    group: HostGroupRecord? = nil,
+    embedded: Bool = false,
+    connectOnOpen: Bool = false,
+    connectOnOpenToken: Int? = nil,
+    onUsernameChange: ((String) -> Void)? = nil,
+    onLiveChange: ((Bool) -> Void)? = nil,
+    onActiveChange: ((Bool) -> Void)? = nil,
+    onRunningChange: ((Bool) -> Void)? = nil
+  ) {
     self.embedded = embedded
-    self.connectOnOpen = connectOnOpen
+    self.connectOnOpenToken = connectOnOpenToken ?? (connectOnOpen ? 1 : 0)
     self.onRunningChange = onRunningChange
     self.onUsernameChange = onUsernameChange
     self.onLiveChange = onLiveChange
+    self.onActiveChange = onActiveChange
     self.group = group?.id == host.groupID ? group : nil
     _viewModel = StateObject(wrappedValue: SSHSessionViewModel(host: host))
   }
@@ -156,6 +169,7 @@ struct SSHSessionSheet: View {
         if running { showConnectionSettings = false }
         onRunningChange?(running)
         onLiveChange?(viewModel.hasLiveSession)
+        onActiveChange?(isActiveAttempt)
       }
       .onChange(of: viewModel.newlySavedCredential) { _, newRecord in
         if let newRecord {
@@ -210,12 +224,13 @@ struct SSHSessionSheet: View {
           loadCredentialRefs()
         }
       }
-      .task {
-        guard !didPrepareConnection else { return }
-        didPrepareConnection = true
-        applyPreset()
-        loadCredentialRefs()
-        if connectOnOpen, canAutoConnect,
+      .task(id: connectOnOpenToken) {
+        if !didPrepareConnection {
+          didPrepareConnection = true
+          applyPreset()
+          loadCredentialRefs()
+        }
+        if openLifecycle.consume(requestToken: connectOnOpenToken, status: viewModel.status), canAutoConnect,
            (form.authenticationMode != .keychainCredential || form.credentialRefs.contains(where: { $0.id == form.selectedCredentialID })) {
           performConnect()
         }
@@ -425,7 +440,7 @@ struct SSHSessionSheet: View {
 
   private var shouldShowConnectionForm: Bool {
     if form.validationError != nil { return true }
-    if viewModel.status == .idle && (!connectOnOpen || !canAutoConnect ||
+    if viewModel.status == .idle && (connectOnOpenToken <= 0 || !canAutoConnect ||
       (form.authenticationMode == .keychainCredential && !form.credentialRefs.contains(where: { $0.id == form.selectedCredentialID }))) { return true }
     switch viewModel.status {
     case .failed, .disconnected: return true
@@ -542,14 +557,17 @@ struct SSHSessionSheet: View {
     return false
   }
 
-  private var isConnectionConfigurationLocked: Bool {
-    if isDiagnosingConnection { return true }
+  private var isActiveAttempt: Bool {
     switch viewModel.status {
     case .verifyingHost, .hostTrustRequired, .hostKeyMismatch, .connecting, .running:
       return true
     case .idle, .disconnected, .failed:
       return false
     }
+  }
+
+  private var isConnectionConfigurationLocked: Bool {
+    isDiagnosingConnection || isActiveAttempt
   }
 
 
@@ -561,3 +579,19 @@ struct SSHSessionSheet: View {
   SSHSessionSheet(host: PreviewFixtures.host)
 }
 #endif
+
+/// Each explicit Open request token is consumed once and only when no session or trust review is in flight.
+struct SSHSessionOpenLifecycle {
+  private(set) var lastHandledToken = 0
+
+  mutating func consume(requestToken: Int, status: SSHSessionViewModel.SessionStatus) -> Bool {
+    guard requestToken > lastHandledToken else { return false }
+    lastHandledToken = requestToken
+    switch status {
+    case .idle, .disconnected, .failed:
+      return true
+    case .verifyingHost, .hostTrustRequired, .hostKeyMismatch, .connecting, .running:
+      return false
+    }
+  }
+}

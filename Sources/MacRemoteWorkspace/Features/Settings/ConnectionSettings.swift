@@ -7,6 +7,9 @@ struct ConnectionSettings: View {
   @AppStorage("rdpLaunchMode") private var rdpLaunchMode: RdpLaunchMode = .external
   @AppStorage(HostRecord.preferredProtocolKey) private var preferredProtocol = "ssh"
 
+  @State private var rdpOptions = RdpConnectionPreferences().globalOptions
+  @State private var rdpOptionsError: String?
+
   var body: some View {
     Form {
       Section {
@@ -33,9 +36,17 @@ struct ConnectionSettings: View {
         Picker(AppLocalization.string("Default launch mode"), selection: $rdpLaunchMode) {
           ForEach(RdpLaunchMode.allCases) { Text($0.localizedTitle).tag($0) }
         }
+        RdpConnectionOptionsView(options: $rdpOptions)
+        if let rdpOptionsError { Text(rdpOptionsError).foregroundStyle(.red) }
       }
     }
     .formStyle(.grouped)
+    .onChange(of: rdpOptions) { _, options in
+      do {
+        try RdpConnectionPreferences().saveGlobal(options)
+        rdpOptionsError = nil
+      } catch { rdpOptionsError = error.localizedDescription }
+    }
   }
 }
 

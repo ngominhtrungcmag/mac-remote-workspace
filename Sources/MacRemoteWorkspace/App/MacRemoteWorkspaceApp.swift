@@ -56,6 +56,16 @@ struct MacRemoteWorkspaceApp: App {
     }
     .defaultSize(width: 1280, height: 800)
 
+    WindowGroup(AppLocalization.string("SSH Session"), id: "quick-connect-ssh-session", for: String.self) { $windowID in
+      if let windowID {
+        QuickConnectSSHSessionWindowView(windowID: windowID)
+          .environment(\.locale, appLocale)
+      } else {
+        UnavailableSessionView(title: AppLocalization.string("SSH session unavailable"), symbol: "terminal")
+      }
+    }
+    .defaultSize(width: 1000, height: 720)
+
     Settings {
       NativeSettingsView()
         .environment(\.locale, appLocale)
@@ -78,9 +88,39 @@ struct UnavailableSessionView: View {
   }
 }
 
-private struct PaletteResult: Identifiable {
+struct PaletteResult: Identifiable, Equatable {
   let id: String
   let title: String
+
+  static func buildResults(
+    hosts: [HostRecord],
+    workspaces: [WorkspaceRecord],
+    groups: [HostGroupRecord],
+    query: String,
+    quickConnectTitle: String = quickConnectText("Quick Connect…"),
+    allHostsTitle: String = AppLocalization.string("All Hosts")
+  ) -> [PaletteResult] {
+    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    let workspaceNames = Dictionary(workspaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+    let groupNames = Dictionary(groups.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+    let filteredHosts = HostSearch.filter(hosts, query: query, workspaceNames: workspaceNames, groupNames: groupNames)
+      .map { PaletteResult(id: "host:" + $0.id, title: $0.displayName) }
+    let filteredWorkspaces = workspaces.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
+      .map { PaletteResult(id: "workspace:" + $0.id, title: $0.name) }
+    let quickConnectItem = PaletteResult(id: "quick-connect", title: quickConnectTitle)
+
+    if trimmed.isEmpty {
+      return [
+        quickConnectItem,
+        PaletteResult(id: "all", title: allHostsTitle),
+      ] + filteredWorkspaces + filteredHosts
+    }
+
+    let matchesQuickConnect = quickConnectTitle.localizedCaseInsensitiveContains(trimmed)
+      || "quick connect".localizedCaseInsensitiveContains(trimmed)
+    let prefix = matchesQuickConnect ? [quickConnectItem] : []
+    return prefix + filteredHosts + filteredWorkspaces
+  }
 }
 
 private struct WorkspaceShellView: View {
@@ -93,6 +133,8 @@ private struct WorkspaceShellView: View {
   @State private var paletteQuery = ""
   @State private var paletteIndex = 0
   @State private var pendingPaletteRdpHost: HostRecord?
+  @State private var pendingPaletteQuickConnect = false
+  @State private var showQuickConnect = false
   @FocusState private var paletteFocused: Bool
 
   // Sheets and alerts managed at shell level
@@ -141,9 +183,11 @@ private struct WorkspaceShellView: View {
       selection = .security(.credentials)
     }
     .focusedSceneValue(\.commandPalette, $showPalette)
+    .focusedSceneValue(\.quickConnect, $showQuickConnect)
     .focusedSceneValue(\.activeSheet, $activeSheet)
     .sheet(isPresented: $showPalette, onDismiss: {
       if let host = pendingPaletteRdpHost { activeSheet = .launchRdp(host); pendingPaletteRdpHost = nil }
+      if pendingPaletteQuickConnect { showQuickConnect = true; pendingPaletteQuickConnect = false }
     }) {
       VStack(alignment: .leading, spacing: 12) {
         Text(AppLocalization.string("Search hosts and workspaces")).font(.headline)
@@ -169,6 +213,9 @@ private struct WorkspaceShellView: View {
     .onAppear { restoreSidebarSelection() }
     .onChange(of: selection) { _, value in savedSelection = value.id }
     .sheet(item: $activeSheet, content: sheetContent)
+    .sheet(isPresented: $showQuickConnect) {
+      QuickConnectSheet()
+    }
     .confirmationDialog(
       deleteTarget?.title ?? AppLocalization.string("Delete item?"),
       isPresented: deleteConfirmationPresented,
@@ -193,16 +240,12 @@ private struct WorkspaceShellView: View {
   }
 
   private var paletteResults: [PaletteResult] {
-    let workspaceNames = Dictionary(store.workspaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
-    let groupNames = Dictionary(store.groups.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
-    let hosts = HostSearch.filter(store.hosts, query: paletteQuery, workspaceNames: workspaceNames, groupNames: groupNames)
-      .map { PaletteResult(id: "host:" + $0.id, title: $0.displayName) }
-    let workspaces = store.workspaces.filter { paletteQuery.isEmpty || $0.name.localizedCaseInsensitiveContains(paletteQuery) }
-      .map { PaletteResult(id: "workspace:" + $0.id, title: $0.name) }
-    if paletteQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      return [PaletteResult(id: "all", title: AppLocalization.string("All Hosts"))] + workspaces + hosts
-    }
-    return hosts + workspaces
+    PaletteResult.buildResults(
+      hosts: store.hosts,
+      workspaces: store.workspaces,
+      groups: store.groups,
+      query: paletteQuery
+    )
   }
 
   private func movePaletteSelection(_ offset: Int) {
@@ -213,16 +256,22 @@ private struct WorkspaceShellView: View {
   private func openPaletteResult() {
     guard paletteResults.indices.contains(paletteIndex) else { return }
     let id = paletteResults[paletteIndex].id
-    if id == "all" { selection = .inventory(.all) }
+    if id == "quick-connect" { pendingPaletteQuickConnect = true }
+    else if id == "all" { selection = .inventory(.all) }
     else if id.hasPrefix("workspace:") { selection = .inventory(.workspace(String(id.dropFirst(10)))) }
     else if id.hasPrefix("host:"), let host = store.hosts.first(where: { $0.id == String(id.dropFirst(5)) }) {
       switch host.defaultConnectionProtocol {
-      case "ssh": openWindow(id: "ssh-session", value: host.id)
+      case "ssh": openSSHWindow(hostID: host.id)
       case "rdp": pendingPaletteRdpHost = host
       default: return
       }
     }
     showPalette = false
+  }
+
+  private func openSSHWindow(hostID: String) {
+    SSHWindowOpenRequests.shared.request(hostID: hostID)
+    openWindow(id: "ssh-session", value: hostID)
   }
 
   private func restoreSidebarSelection() {
@@ -563,6 +612,10 @@ private struct CommandPaletteKey: FocusedValueKey {
   typealias Value = Binding<Bool>
 }
 
+private struct QuickConnectKey: FocusedValueKey {
+  typealias Value = Binding<Bool>
+}
+
 private struct ActiveSheetKey: FocusedValueKey {
   typealias Value = Binding<InventorySheet?>
 }
@@ -571,6 +624,11 @@ private extension FocusedValues {
   var commandPalette: Binding<Bool>? {
     get { self[CommandPaletteKey.self] }
     set { self[CommandPaletteKey.self] = newValue }
+  }
+
+  var quickConnect: Binding<Bool>? {
+    get { self[QuickConnectKey.self] }
+    set { self[QuickConnectKey.self] = newValue }
   }
 
   var activeSheet: Binding<InventorySheet?>? {
@@ -587,6 +645,7 @@ private extension FocusedValues {
 private struct WorkspaceCommands: Commands {
   @FocusedValue(\.workspaceDestination) private var destination: Binding<AppDestination>?
   @FocusedValue(\.commandPalette) private var commandPalette: Binding<Bool>?
+  @FocusedValue(\.quickConnect) private var quickConnect: Binding<Bool>?
   @FocusedValue(\.activeSheet) private var activeSheet: Binding<InventorySheet?>?
   @FocusedValue(\.selectedHostActions) private var hostActions: SelectedHostActions?
 
@@ -597,6 +656,11 @@ private struct WorkspaceCommands: Commands {
       }
       .keyboardShortcut("n", modifiers: .command)
       .disabled(activeSheet == nil)
+      Button(quickConnectText("Quick Connect…")) {
+        quickConnect?.wrappedValue = true
+      }
+      .keyboardShortcut("k", modifiers: [.command, .shift])
+      .disabled(quickConnect == nil)
       Button(AppLocalization.string("Serial Console")) { activeSheet?.wrappedValue = .serialConsole }
         .disabled(activeSheet == nil)
     }

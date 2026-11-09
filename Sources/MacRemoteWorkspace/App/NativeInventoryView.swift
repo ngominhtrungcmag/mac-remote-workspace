@@ -14,6 +14,7 @@ struct NativeInventoryView: View {
   @Binding var operationError: String?
 
   @State private var showSSHConfigImport = false
+  @State private var showQuickConnect = false
   @State private var selectedHostID: String?
   @State private var searchText: String = ""
   @State private var tagFilter: String?
@@ -107,7 +108,7 @@ struct NativeInventoryView: View {
                 host: host,
                 workspaces: store.workspaces,
                 groups: store.groups,
-                onConnectSSH: { openWindow(id: "ssh-session", value: $0.id) },
+                onConnectSSH: { openSSHWindow(hostID: $0.id) },
                 onLaunchRDP: { activeSheet = .launchRdp($0) },
                 onBrowseSFTP: { openWindow(id: "sftp-session", value: $0.id) },
                 onShowMetrics: { activeSheet = .hostMetrics($0) },
@@ -123,9 +124,12 @@ struct NativeInventoryView: View {
     .sheet(isPresented: $showSSHConfigImport) {
       SSHConfigImportSheet(store: store)
     }
+    .sheet(isPresented: $showQuickConnect) {
+      QuickConnectSheet()
+    }
     .focusedSceneValue(\.selectedHostActions, selectedHost.map { host in
       SelectedHostActions(host: host,
-        connect: { openWindow(id: "ssh-session", value: host.id) },
+        connect: { openSSHWindow(hostID: host.id) },
         sftp: { openWindow(id: "sftp-session", value: host.id) },
         rdp: { activeSheet = .launchRdp(host) },
         edit: { activeSheet = .editHost(host) },
@@ -139,6 +143,16 @@ struct NativeInventoryView: View {
       prompt: AppLocalization.string("Search Hosts")
     )
     .toolbar {
+      ToolbarItem(placement: .primaryAction) {
+        Button {
+          showQuickConnect = true
+        } label: {
+          Label(quickConnectText("Quick Connect"), systemImage: "bolt.horizontal")
+        }
+        .buttonStyle(WorkspaceSecondaryButtonStyle())
+        .help(quickConnectText("Quick Connect without saving host"))
+        .accessibilityLabel(quickConnectText("Quick Connect"))
+      }
       ToolbarItem(placement: .primaryAction) {
         Button(action: addHost) {
           Label(AppLocalization.string("Add Host"), systemImage: "plus")
@@ -275,9 +289,14 @@ struct NativeInventoryView: View {
     }
   }
 
+  private func openSSHWindow(hostID: String) {
+    SSHWindowOpenRequests.shared.request(hostID: hostID)
+    openWindow(id: "ssh-session", value: hostID)
+  }
+
   private func connectDefault(_ host: HostRecord) {
     switch host.defaultConnectionProtocol {
-    case "ssh": openWindow(id: "ssh-session", value: host.id)
+    case "ssh": openSSHWindow(hostID: host.id)
     case "rdp": activeSheet = .launchRdp(host)
     default: break
     }
@@ -287,7 +306,7 @@ struct NativeInventoryView: View {
   private func hostActions(for host: HostRecord) -> some View {
     if host.supportsProtocol("ssh") {
       Button {
-        openWindow(id: "ssh-session", value: host.id)
+        openSSHWindow(hostID: host.id)
       } label: {
         Label(AppLocalization.string("Connect SSH"), systemImage: "terminal")
     }
@@ -337,6 +356,8 @@ struct NativeInventoryView: View {
     } actions: {
       VStack(spacing: 8) {
         Button(AppLocalization.string("Add Host"), action: addHost).buttonStyle(WorkspacePrimaryButtonStyle())
+        Button(quickConnectText("Quick Connect…")) { showQuickConnect = true }
+          .buttonStyle(WorkspaceSecondaryButtonStyle())
         Button(AppLocalization.string("Import from ~/.ssh/config")) { showSSHConfigImport = true }
         Button(AppLocalization.string("Import file…")) { activeSheet = .importExport(.importTab) }
       }

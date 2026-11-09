@@ -745,3 +745,29 @@
 "Share" = "Share";
 "Windows can read and change files in this folder. It appears as %@." = "Windows can read and change files in this folder. It appears as %@.";
 "Shared folder is not an accessible folder." = "Shared folder is not an accessible folder.";
+
+// Embedded RDP display and connection preferences
+"Desktop resolution" = "Desktop resolution";
+"Resize with window" = "Resize with window";
+"Fixed resolutions use exact pixels at 100% scaling." = "Fixed resolutions use exact pixels at 100% scaling.";
+"Optimize for Retina displays" = "Optimize for Retina displays";
+"Retina applies only when resizing with the window. Fixed resolutions use 100% scaling." = "Retina applies only when resizing with the window. Fixed resolutions use 100% scaling.";
+"Network profile" = "Network profile";
+"Automatic (current defaults)" = "Automatic (current defaults)";
+"Reduced bandwidth" = "Reduced bandwidth";
+"LAN" = "LAN";
+"Higher pixel resolutions use more memory and bandwidth. Reduced bandwidth limits desktop visual effects; it does not set a bandwidth cap." = "Higher pixel resolutions use more memory and bandwidth. Reduced bandwidth limits desktop visual effects; it does not set a bandwidth cap.";
+"Applies to new sessions. Reconnect keeps the session's original settings; close and open a new session to use changed settings." = "Applies to new sessions. Reconnect keeps the session's original settings; close and open a new session to use changed settings.";
+"Use default settings" = "Use default settings";
+"Embedded RDP settings" = "Embedded RDP settings";
+
+"Quick Connect…" = "Quick Connect…";
+"Quick Connect" = "Quick Connect";
+"Connects without saving this host to your workspace inventory. Host trust verification is still enforced before authentication." = "Connects without saving this host to your workspace inventory. Host trust verification is still enforced before authentication.";
+"Enter a valid target such as ssh://user@host:22 or rdp://host:3389." = "Enter a valid target such as ssh://user@host:22 or rdp://host:3389.";
+"View Only" = "View Only";
+"View-only mode is on. Keyboard, mouse, and clipboard input are blocked." = "View-only mode is on. Keyboard, mouse, and clipboard input are blocked.";
+"Toggle view-only mode to block keyboard, mouse, and clipboard input." = "Toggle view-only mode to block keyboard, mouse, and clipboard input.";
+"On" = "On";
+"Off" = "Off";
+"Quick Connect without saving host" = "Quick Connect without saving host";

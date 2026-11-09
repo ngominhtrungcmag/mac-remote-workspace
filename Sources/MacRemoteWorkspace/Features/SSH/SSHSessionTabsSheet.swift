@@ -1,6 +1,24 @@
 import AppCore
 import SwiftUI
 
+/// Explicit Open intent lives only in this process; scene restoration carries only the host ID.
+@MainActor
+final class SSHWindowOpenRequests: ObservableObject {
+  static let shared = SSHWindowOpenRequests()
+  @Published private(set) var revision = 0
+  private var pending: Set<String> = []
+
+  func request(hostID: String) {
+    pending.insert(hostID)
+    revision += 1
+  }
+
+  func consume(hostID: String, hasActiveSession: Bool = false) -> Bool {
+    let requested = pending.remove(hostID) != nil
+    return requested && !hasActiveSession
+  }
+}
+
 /// Hosts several independent SSH sessions (one view model, trust flow and PTY per tab) for one host.
 /// All tabs stay alive while hidden; closing a tab or the sheet disconnects its session.
 struct SSHSessionTabsSheet: View {
@@ -12,8 +30,12 @@ struct SSHSessionTabsSheet: View {
   @State private var nextID = 2
   @State private var running: Set<Int> = []
   @State private var live: Set<Int> = []
+  @State private var active: Set<Int> = []
   @State private var usernames: [Int: String] = [:]
   @State private var pendingCloseTab: Int?
+  @State private var autoConnectTab: Int?
+  @State private var autoConnectToken = 0
+  @ObservedObject private var openRequests = SSHWindowOpenRequests.shared
 
   private static let maxTabs = 8
 
@@ -36,9 +58,19 @@ struct SSHSessionTabsSheet: View {
         Divider()
         ZStack {
           ForEach(tabs, id: \.self) { id in
-            SSHSessionSheet(host: host, group: group, embedded: true, connectOnOpen: id == 1, onUsernameChange: { usernames[id] = $0 }, onLiveChange: { isLive in
-              if isLive { live.insert(id) } else { live.remove(id) }
-            }) { isRunning in
+            SSHSessionSheet(
+              host: host,
+              group: group,
+              embedded: true,
+              connectOnOpenToken: id == autoConnectTab ? autoConnectToken : 0,
+              onUsernameChange: { usernames[id] = $0 },
+              onLiveChange: { isLive in
+                if isLive { live.insert(id) } else { live.remove(id) }
+              },
+              onActiveChange: { isActive in
+                if isActive { active.insert(id) } else { active.remove(id) }
+              }
+            ) { isRunning in
               if isRunning { running.insert(id) } else { running.remove(id) }
             }
             .opacity(id == selected ? 1 : 0)
@@ -48,6 +80,14 @@ struct SSHSessionTabsSheet: View {
         }
       }
       .background(shortcuts)
+      .onReceive(openRequests.$revision) { _ in
+        // Consume even when already open: focusing a window must not queue a future connection.
+        guard openRequests.consume(hostID: host.id, hasActiveSession: !active.isEmpty) else { return }
+        guard let firstTab = tabs.first else { return }
+        autoConnectTab = firstTab
+        autoConnectToken += 1
+        selected = firstTab
+      }
       .onChange(of: tabs) { _, new in Self.store.save(hostID: host.id, tabCount: new.count) }
       .navigationTitle(AppLocalization.format("SSH: %1$@", String(describing: host.displayName)))
       .interactiveDismissDisabled(!live.isEmpty)  // Esc must not silently kill sessions
@@ -164,13 +204,15 @@ struct SSHSessionTabsSheet: View {
     tabs.remove(at: i)  // removal triggers onDisappear -> disconnect
     running.remove(id)
     live.remove(id)
+    active.remove(id)
+    if autoConnectTab == id { autoConnectTab = nil }
     usernames.removeValue(forKey: id)
     if selected == id { selected = tabs[min(i, tabs.count - 1)] }
   }
 }
 
 #if DEBUG
-// Tab 1 auto-connects only with saved settings; the fixture host has none.
+// Previews and restored windows have no explicit Open authorization.
 #Preview("SSHSessionTabsSheet") {
   SSHSessionTabsSheet(host: PreviewFixtures.host).frame(width: 1000, height: 650)
 }

@@ -22,9 +22,15 @@ public struct RdpDisplayResolution: Sendable, Equatable {
 
   /// Calculates resolution from view point size and window backing scale factor.
   public static func from(pointWidth: Double, pointHeight: Double, backingScaleFactor: Double) -> RdpDisplayResolution {
-    let scale: UInt32 = backingScaleFactor >= 1.5 ? 200 : 100
-    let pixelWidth = UInt32(max(1.0, (pointWidth * (scale == 200 ? 2.0 : 1.0)).rounded()))
-    let pixelHeight = UInt32(max(1.0, (pointHeight * (scale == 200 ? 2.0 : 1.0)).rounded()))
+    let backing = backingScaleFactor.isFinite && backingScaleFactor > 0 ? backingScaleFactor : 1
+    let scale: UInt32 = backing >= 1.5 ? 200 : 100
+    func pixels(_ points: Double) -> UInt32 {
+      let value = points * (scale == 200 ? 2 : 1)
+      guard value.isFinite else { return minimumDimension }
+      return UInt32(min(Double(maximumDimension), max(1, value.rounded())))
+    }
+    let pixelWidth = pixels(pointWidth)
+    let pixelHeight = pixels(pointHeight)
     return RdpDisplayResolution(width: pixelWidth, height: pixelHeight, scaleFactor: scale)
   }
 }

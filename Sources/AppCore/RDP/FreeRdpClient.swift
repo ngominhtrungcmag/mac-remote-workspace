@@ -148,6 +148,7 @@ final class FreeRdpClient: @unchecked Sendable {
 
   private let host: String
   private let port: Int
+  private let options: RdpConnectionOptions
   private let resolution: RdpDisplayResolution
   private let sharedFolder: URL?
   private let callbacks: Callbacks
@@ -163,11 +164,12 @@ final class FreeRdpClient: @unchecked Sendable {
 
   init(
     host: String, port: Int, resolution: RdpDisplayResolution, clipboardDirectory: URL? = nil,
-    sharedFolder: URL? = nil, callbacks: Callbacks
+    sharedFolder: URL? = nil, options: RdpConnectionOptions = RdpConnectionOptions(), callbacks: Callbacks
   ) {
     self.host = host
     self.port = port
-    self.resolution = resolution
+    self.options = options
+    self.resolution = options.initialResolution(resolution)
     // Defense in depth: an invalid folder is dropped, so the session runs without sharing.
     self.sharedFolder = sharedFolder.flatMap { try? RdpSharedFolder.validate($0.path) }
     self.callbacks = callbacks
@@ -223,7 +225,7 @@ final class FreeRdpClient: @unchecked Sendable {
   func resize(_ r: RdpDisplayResolution) {
     ioLock.lock()
     defer { ioLock.unlock() }
-    guard connected, let disp, let send = disp.pointee.SendMonitorLayout else { return }
+    guard options.displayMode == .window, connected, let disp, let send = disp.pointee.SendMonitorLayout else { return }
     var layout = DISPLAY_CONTROL_MONITOR_LAYOUT(
       Flags: 1, Left: 0, Top: 0, Width: r.width & ~1, Height: r.height,
       PhysicalWidth: 0, PhysicalHeight: 0, Orientation: 0,
@@ -324,6 +326,7 @@ final class FreeRdpClient: @unchecked Sendable {
     ok = freerdp_settings_set_uint32(s, FreeRDP_ServerPort, UInt32(port)) && ok
     ok = freerdp_settings_set_uint32(s, FreeRDP_DesktopWidth, resolution.width) && ok
     ok = freerdp_settings_set_uint32(s, FreeRDP_DesktopHeight, resolution.height) && ok
+    ok = Self.configureNetwork(s, profile: options.networkProfile) && ok
     ok = freerdp_settings_set_uint32(s, FreeRDP_ColorDepth, 32) && ok
     ok = freerdp_settings_set_bool(s, FreeRDP_SoftwareGdi, true) && ok
     // Security: NLA only, never ignore certificates, never auto-accept.
@@ -372,6 +375,23 @@ final class FreeRdpClient: @unchecked Sendable {
     return ok
   }
 
+  /// Automatic deliberately leaves the installed library's network/performance defaults untouched.
+  static func configureNetwork(_ s: UnsafeMutablePointer<rdpSettings>, profile: RdpConnectionOptions.NetworkProfile) -> Bool {
+    guard profile != .automatic else { return true }
+    let reduced = profile == .reducedBandwidth
+    var ok = freerdp_settings_set_uint32(s, FreeRDP_ConnectionType,
+      UInt32(reduced ? CONNECTION_TYPE_BROADBAND_LOW : CONNECTION_TYPE_LAN))
+    ok = freerdp_settings_set_bool(s, FreeRDP_NetworkAutoDetect, false) && ok
+    for key in [FreeRDP_DisableWallpaper, FreeRDP_DisableFullWindowDrag, FreeRDP_DisableMenuAnims, FreeRDP_DisableThemes] {
+      ok = freerdp_settings_set_bool(s, key, reduced) && ok
+    }
+    for key in [FreeRDP_AllowFontSmoothing, FreeRDP_AllowDesktopComposition] {
+      ok = freerdp_settings_set_bool(s, key, !reduced) && ok
+    }
+    freerdp_performance_flags_make(s)
+    return ok
+  }
+
   /// All device redirection is off unless a validated `sharedFolder` is given; then rdpdr carries
   /// exactly that one drive. Printers, smart cards, ports and audio are never redirected.
   static func configureDeviceRedirection(_ s: UnsafeMutablePointer<rdpSettings>, sharedFolder: URL?) -> Bool {
@@ -389,7 +409,7 @@ final class FreeRdpClient: @unchecked Sendable {
     let device = RdpSharedFolder.driveName(for: sharedFolder).withCString { name in
       sharedFolder.path.withCString { path in
         var args: [UnsafePointer<CChar>?] = [name, path]
-        return freerdp_device_new(RDPDR_DTYP_FILESYSTEM.rawValue, args.count, &args)
+        return freerdp_device_new(UInt32(RDPDR_DTYP_FILESYSTEM), args.count, &args)
       }
     }
     guard let device else { return false }

@@ -9,7 +9,7 @@ import Foundation
 /// Secrets (`trustDecision` credentials) only ever travel over this socket, after the app's trust decision.
 enum RdpHelperMessage: Equatable, Sendable, Codable {
   // app -> helper
-  case start(host: String, port: Int, width: UInt32, height: UInt32, scaleFactor: UInt32, clipboardDirectory: String? = nil, sharedFolder: String? = nil)
+  case start(host: String, port: Int, width: UInt32, height: UInt32, scaleFactor: UInt32, clipboardDirectory: String? = nil, sharedFolder: String? = nil, options: RdpConnectionOptions? = nil)
   case trustDecision(accepted: Bool, username: String?, domain: String?, password: String?)
   case key(scancode: UInt16, isExtended: Bool, isKeyUp: Bool)
   case pointer(x: UInt16, y: UInt16, buttonFlags: UInt16)
@@ -28,15 +28,18 @@ enum RdpHelperMessage: Equatable, Sendable, Codable {
   static let maxBodyBytes = 160 << 20
 
   func encoded() throws -> Data {
-    var body = Data()
     if case .frame(let w, let h, let bpr, let data) = self {
-      body.append(1)
-      for value in [w, h, bpr] { body.append(Self.be32(UInt32(truncatingIfNeeded: value))) }
-      body.append(data)
-    } else {
-      body.append(0)
-      body.append(try JSONEncoder().encode(self))
+      var out = Data()
+      out.reserveCapacity(data.count + 17)
+      out.append(Self.be32(UInt32(data.count + 13)))
+      out.append(1)
+      for value in [w, h, bpr] { out.append(Self.be32(UInt32(truncatingIfNeeded: value))) }
+      out.append(data)
+      return out
     }
+    var body = Data()
+    body.append(0)
+    body.append(try JSONEncoder().encode(self))
     var out = Self.be32(UInt32(body.count))
     out.append(body)
     return out

@@ -202,7 +202,7 @@ final class LocalizationTests: XCTestCase {
   }
 
   private func localizedLiterals(in source: String) -> [String] {
-    let marker = try! NSRegularExpression(pattern: #"AppLocalization\.(?:string|format)\("#)
+    let marker = try! NSRegularExpression(pattern: #"(?:AppLocalization\.(?:string|format)|quickConnectText|rdpSessionText)\("#)
     let sourceRange = NSRange(source.startIndex..., in: source)
     return marker.matches(in: source, range: sourceRange).flatMap { match -> [String] in
       guard let matchRange = Range(match.range, in: source) else { return [] }
